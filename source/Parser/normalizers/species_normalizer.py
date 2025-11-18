@@ -1,13 +1,13 @@
 class SpeciesNormalizer(object):
     def __init__(self, dict_path):
-        self.NO_ENTITY_ID = 'CUI-less'
+        self.NO_ENTITY_ID = "CUI-less"
 
         # Create dictionary for exact match
         self.species2oid = dict()
-        with open(dict_path, 'r', encoding='utf-8') as f:
+        with open(dict_path, "r", encoding="utf-8") as f:
             for line in f:
-                oid, names = line[:-1].split('||')
-                names = names.split('|')
+                oid, names = line[:-1].split("||")
+                names = names.split("|")
                 for name in names:
                     # a part of tmChem normalization
                     self.species2oid[name] = oid
@@ -21,5 +21,5 @@ class SpeciesNormalizer(object):
                 oids.append(self.species2oid[name.lower()])
             else:
                 oids.append(self.NO_ENTITY_ID)
-        
+
         return oids

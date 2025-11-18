@@ -1,29 +1,63 @@
-# Ignore directories
+# ============================
+# General dataset / output dirs
+# ============================
 data/
 results/
 src/
 ablation/
-utils/finetuning/
-source/models
-source/Parser/resources
-source/Parser/models
-elasticsearch/sif
-elasticsearch/data1
-elasticsearch/data
-elasticsearch/logs
-source/Parser/input
-source/Parser/output
-Parser/logs
-# Ignore Python cache files
+logs/
+*.log
+
+# ============================
+# Finetuning ignore rules
+# ============================
+
+# Ignore ANY directory under finetuning/ starting with checkpoint
+**/finetuning/**/checkpoint*/
+
+# Ignore ANY directory under finetuning/ starting with finetuned
+**/finetuning/**/finetuned*/
+
+# Ignore ANY directory under finetuning/ ending with "data"
+**/finetuning/**/*data/
+
+# Ignore this explicit model folder
+utils/finetuning/finetune_ner/RoBERTa-large-PM-M3-Voc/
+utils/finetuning/finetune_ner/output_eval
+utils/finetuning/finetune_ner
+
+# ============================
+# ElasticSearch artifacts
+# ============================
+elasticsearch/sif/
+elasticsearch/data1/
+elasticsearch/data/
+elasticsearch/logs/
+elasticsearch/sif/*.sif
+
+# ============================
+# Parser artifacts
+# ============================
+source/models/
+source/Parser/resources/
+source/Parser/models/
+source/Parser/input/
+source/Parser/output/
+Parser/logs/
+
+# ============================
+# Python cache
+# ============================
 __pycache__/
 *.py[cod]
-logs/
-# Ignore other cache or temporary files
-*.log
+
+# ============================
+# Temporary / cache files
+# ============================
 *.tmp
 *.bak
 *.swp
+*.slurm
+**/tmp/
 .DS_Store
 Thumbs.db
-
-elasticsearch/sif/*.sif

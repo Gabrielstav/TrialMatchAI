@@ -17,6 +17,7 @@ llm = ChatOpenAI(model="gpt-4o-mini", max_retries=3)
 # Minimum word count for eligibility criteria to be considered "rich"
 MIN_ELIGIBILITY_WORD_COUNT = 512
 
+
 def safe_parse_list(response_str: str) -> List:
     """
     Attempts to parse a Python list from a string.
@@ -29,15 +30,15 @@ def safe_parse_list(response_str: str) -> List:
     if start == -1 or end == -1:
         print("No list brackets found in the response.")
         return []
-    list_str = response_str[start:end+1]
-    
+    list_str = response_str[start : end + 1]
+
     try:
         result = ast.literal_eval(list_str)
         if isinstance(result, list):
             return result
     except Exception as e:
         print(f"literal_eval failed on extracted string: {e}")
-    
+
     try:
         json_str = list_str.replace("'", '"')
         result = json.loads(json_str)
@@ -45,8 +46,9 @@ def safe_parse_list(response_str: str) -> List:
             return result
     except Exception as e:
         print(f"json.loads fallback failed: {e}")
-    
+
     return []
+
 
 def safe_parse_dict(response_str: str) -> Dict:
     """
@@ -60,15 +62,15 @@ def safe_parse_dict(response_str: str) -> Dict:
     if start == -1 or end == -1:
         print("No dictionary found in the response.")
         return {}
-    dict_str = response_str[start:end+1]
-    
+    dict_str = response_str[start : end + 1]
+
     try:
         result = ast.literal_eval(dict_str)
         if isinstance(result, dict):
             return result
     except Exception as e:
         print(f"literal_eval failed on extracted string: {e}")
-    
+
     try:
         json_str = dict_str.replace("'", '"')
         result = json.loads(json_str)
@@ -76,8 +78,9 @@ def safe_parse_dict(response_str: str) -> Dict:
             return result
     except Exception as e:
         print(f"json.loads fallback failed: {e}")
-    
+
     return {}
+
 
 def generate_synonyms(condition: str) -> List[str]:
     """
@@ -99,7 +102,10 @@ def generate_synonyms(condition: str) -> List[str]:
         print(f"Error parsing synonyms for condition '{condition}'.")
     return synonyms
 
-def generate_summary(details: List[str], conditions: List[str] = None, age_spec: str = None) -> str:
+
+def generate_summary(
+    details: List[str], conditions: List[str] = None, age_spec: str = None
+) -> str:
     """
     Generates a one-paragraph patient note based on the provided details and conditions.
     The note should naturally incorporate the necessary patient information without explicitly referencing
@@ -109,13 +115,13 @@ def generate_summary(details: List[str], conditions: List[str] = None, age_spec:
     "Age: <number>, Gender: <value>"
     """
     combined_details = " ".join(details)
-    
+
     condition_info = ""
     if conditions:
         condition_info = "diagnosed with one of : " + ", ".join(conditions) + "."
-    
+
     age_sentence = f" The patient should be {age_spec}." if age_spec else ""
-    
+
     prompt = f"""
 You are a seasoned medical expert. Based on the clinical trial information provided below, generate a detailed, professional one-paragraph patient note describing an ideal candidate {condition_info} for the trial. Ensure that the candidate's medical history and current condition strictly satisfy every single inclusion criterion without exception while clearly and explicitly not violating any exclusion criteria.
 
@@ -132,6 +138,7 @@ At the end of the note, include a new line exactly in the following format:
     response = llm.invoke([HumanMessage(content=prompt)])
     print("Summary response:", response.content)
     return response.content.strip()
+
 
 def extract_age_gender_from_summary(summary: str) -> Tuple[int, str]:
     """
@@ -151,12 +158,14 @@ def extract_age_gender_from_summary(summary: str) -> Tuple[int, str]:
         print("Could not extract age and gender from summary. Using default values.")
         return 50, "male"
 
+
 def split_into_sentences(text: str) -> List[str]:
     """
     Splits the provided text into sentences using punctuation as delimiters.
     """
-    sentences = re.split(r'(?<=[.!?]) +', text)
+    sentences = re.split(r"(?<=[.!?]) +", text)
     return [s.strip() for s in sentences if s.strip()]
+
 
 def generate_conditions(raw_description: str) -> List[str]:
     """
@@ -178,6 +187,7 @@ def generate_conditions(raw_description: str) -> List[str]:
         print("Error parsing conditions.")
     return conditions
 
+
 def extract_main_condition_from_summary(summary: str) -> str:
     """
     Extracts the primary condition for which the patient is being treated from the patient note.
@@ -192,6 +202,7 @@ def extract_main_condition_from_summary(summary: str) -> str:
     print("Extracted main condition:", main_condition)
     return main_condition
 
+
 def extract_age_gender_from_trial(trial_data: Dict) -> str:
     """
     Extracts the age and gender requirements from the trial's JSON data using the fields:
@@ -204,11 +215,11 @@ def extract_age_gender_from_trial(trial_data: Dict) -> str:
         trial_gender = trial_data.get("gender", "male")
         if min_age_raw is not None and max_age_raw is not None:
             if isinstance(min_age_raw, str):
-                min_age = int(''.join(filter(str.isdigit, min_age_raw)))
+                min_age = int("".join(filter(str.isdigit, min_age_raw)))
             else:
                 min_age = int(min_age_raw)
             if isinstance(max_age_raw, str):
-                max_age = int(''.join(filter(str.isdigit, max_age_raw)))
+                max_age = int("".join(filter(str.isdigit, max_age_raw)))
             else:
                 max_age = int(max_age_raw)
             age_spec = f"aged between {min_age} and {max_age} years old; gender must be {trial_gender}"
@@ -219,10 +230,13 @@ def extract_age_gender_from_trial(trial_data: Dict) -> str:
         age_spec = f"gender must be {trial_gender}"
     return age_spec
 
-def generate_patient_profile(eligibility_criteria: str, ground_nctid: str, trial_data: Dict) -> Dict:
+
+def generate_patient_profile(
+    eligibility_criteria: str, ground_nctid: str, trial_data: Dict
+) -> Dict:
     """
     Generates a patient profile for a trial.
-    
+
     Steps:
       1. Construct an age specification string from the trial's JSON.
       2. Extract condition(s) from the trial data.
@@ -232,7 +246,7 @@ def generate_patient_profile(eligibility_criteria: str, ground_nctid: str, trial
       5. Extract the main condition from the note.
       6. Generate synonyms for the extracted main condition.
       7. Extract additional conditions solely from the raw note.
-    
+
     Returns a JSON object with the following keys:
       - raw_description (the patient note)
       - age
@@ -245,7 +259,7 @@ def generate_patient_profile(eligibility_criteria: str, ground_nctid: str, trial
     """
     # 1. Build an age specification string from trial_data.
     age_spec = extract_age_gender_from_trial(trial_data)
-    
+
     # 2. Extract condition(s) from the trial data.
     condition_field = trial_data.get("condition", "")
     if isinstance(condition_field, list):
@@ -254,19 +268,21 @@ def generate_patient_profile(eligibility_criteria: str, ground_nctid: str, trial
         conditions_input = [condition_field]
     else:
         conditions_input = []
-    
+
     # 3. Generate the raw patient note using eligibility criteria, conditions, and age specifications.
-    raw_description = generate_summary([eligibility_criteria], conditions=conditions_input, age_spec=age_spec)
-    
+    raw_description = generate_summary(
+        [eligibility_criteria], conditions=conditions_input, age_spec=age_spec
+    )
+
     # 4. Extract age and gender from the generated note.
     age, gender = extract_age_gender_from_summary(raw_description)
-    
+
     # 5. Extract the main condition from the raw description.
     main_condition = extract_main_condition_from_summary(raw_description)
-    
+
     # 6. Generate synonyms for the main condition.
     synonyms = generate_synonyms(main_condition)
-    
+
     # 7. Extract additional conditions solely from the raw note.
     conditions_from_note = generate_conditions(raw_description)
     if main_condition not in conditions_from_note:
@@ -282,8 +298,9 @@ def generate_patient_profile(eligibility_criteria: str, ground_nctid: str, trial
         "synonyms": synonyms,
         "conditions": conditions,
         "split_raw_description": split_into_sentences(raw_description),
-        "ground_nctid": ground_nctid
+        "ground_nctid": ground_nctid,
     }
+
 
 def process_trials(input_folder: str, output_file: str):
     """
@@ -298,14 +315,18 @@ def process_trials(input_folder: str, output_file: str):
          synonyms, and additional conditions from that note.
       5. Saves the 100 patient profiles to a single JSON file.
     """
-    all_files = [f for f in os.listdir(input_folder) if f.startswith("NCT") and f.endswith(".json")]
+    all_files = [
+        f
+        for f in os.listdir(input_folder)
+        if f.startswith("NCT") and f.endswith(".json")
+    ]
     matching_trials = []
     cancer_terms = ["cancer", "tumor", "malignancy", "neoplasm", "carcinoma"]
 
     for filename in all_files:
         file_path = os.path.join(input_folder, filename)
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 trial_data = json.load(f)
         except Exception as e:
             print(f"Failed to load {filename}: {e}")
@@ -314,7 +335,9 @@ def process_trials(input_folder: str, output_file: str):
         # Check if the start_date is after 2015.
         start_date_str = trial_data.get("start_date")
         if not start_date_str or not isinstance(start_date_str, str):
-            print(f"Skipping trial {filename} because start_date is missing or not a valid string.")
+            print(
+                f"Skipping trial {filename} because start_date is missing or not a valid string."
+            )
             continue
 
         try:
@@ -326,8 +349,13 @@ def process_trials(input_folder: str, output_file: str):
 
         # Check if the eligibility criteria exist and are long and rich.
         eligibility_criteria = trial_data.get("eligibility_criteria", "")
-        if not eligibility_criteria or len(eligibility_criteria.split()) < MIN_ELIGIBILITY_WORD_COUNT:
-            print(f"Skipping trial {filename} due to insufficient eligibility criteria (less than {MIN_ELIGIBILITY_WORD_COUNT} words).")
+        if (
+            not eligibility_criteria
+            or len(eligibility_criteria.split()) < MIN_ELIGIBILITY_WORD_COUNT
+        ):
+            print(
+                f"Skipping trial {filename} due to insufficient eligibility criteria (less than {MIN_ELIGIBILITY_WORD_COUNT} words)."
+            )
             continue
 
         # Handle the condition field, which can be a list or a string.
@@ -341,29 +369,36 @@ def process_trials(input_folder: str, output_file: str):
         # Additional condition: trial must have overall_status "Recruiting"
         overall_status = trial_data.get("overall_status", "").strip().lower()
 
-        if (year > 2015 and 
-            any(term in condition_lower for term in cancer_terms) and 
-            overall_status == "recruiting"):
+        if (
+            year > 2015
+            and any(term in condition_lower for term in cancer_terms)
+            and overall_status == "recruiting"
+        ):
             matching_trials.append((filename, trial_data))
-    
+
     if len(matching_trials) < 100:
-        print(f"Warning: Only {len(matching_trials)} matching trials found. Proceeding with available trials.")
+        print(
+            f"Warning: Only {len(matching_trials)} matching trials found. Proceeding with available trials."
+        )
         sample_trials = matching_trials
     else:
         sample_trials = random.sample(matching_trials, 100)
-    
+
     results = {}
     for filename, trial_data in sample_trials:
         ground_nctid = filename.replace(".json", "")
         eligibility_criteria = trial_data.get("eligibility_criteria", "")
         print(f"Processing trial {ground_nctid}...")
-        patient_profile = generate_patient_profile(eligibility_criteria, ground_nctid, trial_data)
+        patient_profile = generate_patient_profile(
+            eligibility_criteria, ground_nctid, trial_data
+        )
         results[ground_nctid] = patient_profile
-    
-    with open(output_file, 'w') as out_file:
+
+    with open(output_file, "w") as out_file:
         json.dump(results, out_file, indent=2)
-    
+
     print(f"Processing complete. Results saved to {output_file}")
+
 
 # Set your input folder and output file paths accordingly.
 input_folder = "../../data/trials_jsons"  # Folder containing NCT*.json files

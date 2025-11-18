@@ -6,14 +6,11 @@ clinical trial eligibility criteria texts.
 """
 
 import os
-import re
 import json
 import tempfile
 import unittest
-import itertools
 import pandas as pd
-import xml.etree.ElementTree as ET
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 from src.Preprocessor.preprocessing_utils import (
@@ -26,8 +23,6 @@ from src.Preprocessor.preprocessing_utils import (
     parse_xml_content,
     extract_eligibility_criteria,
     split_by_leading_char_from_regex_patterns,
-    is_header,
-    is_false_header,
     split_on_carriage_returns,
     split_lines_on_semicolon,
     split_to_sentences,
@@ -37,19 +32,21 @@ from src.Preprocessor.preprocessing_utils import (
     extract_separate_inclusion_exclusion,
     split_on_full_stops,
     split_large_sentences,
-    eic_text_preprocessing
+    eic_text_preprocessing,
 )
 
 
 class TestLoadRegexPatterns(unittest.TestCase):
     def setUp(self):
         # Create a temporary JSON file with a patterns dictionary.
-        self.temp_file = tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json")
+        self.temp_file = tempfile.NamedTemporaryFile(
+            mode="w+", delete=False, suffix=".json"
+        )
         sample_data = {
             "patterns": {
                 "bullet": {"regex": r"•"},
                 "dash": {"regex": r"^-"},
-                "number": {"regex": r"^\d+\)"}
+                "number": {"regex": r"^\d+\)"},
             }
         }
         json.dump(sample_data, self.temp_file)
@@ -60,21 +57,14 @@ class TestLoadRegexPatterns(unittest.TestCase):
 
     def test_load_regex_patterns(self):
         patterns = load_regex_patterns(self.temp_file.name)
-        expected = {
-            "bullet": r"•",
-            "dash": r"^-",
-            "number": r"^\d+\)"
-        }
+        expected = {"bullet": r"•", "dash": r"^-", "number": r"^\d+\)"}
         self.assertEqual(patterns, expected)
 
 
 class TestSplittingAndReplacingFunctions(unittest.TestCase):
     def test_split_on_leading_markers(self):
         # Test splitting a line with bullet, dash and asterisk markers.
-        input_lines = [
-            "• First item - subitem * detail",
-            "No marker here"
-        ]
+        input_lines = ["• First item - subitem * detail", "No marker here"]
         result = split_on_leading_markers(input_lines)
         # Check that more than one line is returned and that it contains expected fragments.
         self.assertIsInstance(result, list)
@@ -114,9 +104,13 @@ class TestXMLFunctions(unittest.TestCase):
     def setUp(self):
         # Create temporary XML content.
         self.valid_xml = "<root><eligibility><criteria><textblock>Eligibility Content</textblock></criteria></eligibility></root>"
-        self.invalid_xml = "<root><eligibility><criteria><textblock>Missing closing tags"
+        self.invalid_xml = (
+            "<root><eligibility><criteria><textblock>Missing closing tags"
+        )
         # Create a temporary file for testing read_xml_file.
-        self.temp_xml_file = tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".xml")
+        self.temp_xml_file = tempfile.NamedTemporaryFile(
+            mode="w+", delete=False, suffix=".xml"
+        )
         self.temp_xml_file.write(self.valid_xml)
         self.temp_xml_file.close()
 
@@ -147,7 +141,9 @@ class TestExtractEligibilityCriteria(unittest.TestCase):
         # Create dummy XML content that includes the eligibility textblock.
         self.dummy_xml = "<root><eligibility><criteria><textblock>Eligibility Content for Trial</textblock></criteria></eligibility></root>"
         # Create a temporary file that will be used to simulate a trial XML file.
-        self.temp_xml_file = tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".xml")
+        self.temp_xml_file = tempfile.NamedTemporaryFile(
+            mode="w+", delete=False, suffix=".xml"
+        )
         self.temp_xml_file.write(self.dummy_xml)
         self.temp_xml_file.close()
 
@@ -157,15 +153,24 @@ class TestExtractEligibilityCriteria(unittest.TestCase):
     def test_extract_eligibility_criteria_found(self):
         trial_id = "dummy_trial"
         # Patch os.path.exists and os.path.join using the correct module path.
-        with patch("src.Preprocessor.preprocessing_utils.os.path.exists", return_value=True), \
-             patch("src.Preprocessor.preprocessing_utils.os.path.join", return_value=self.temp_xml_file.name):
+        with (
+            patch(
+                "src.Preprocessor.preprocessing_utils.os.path.exists", return_value=True
+            ),
+            patch(
+                "src.Preprocessor.preprocessing_utils.os.path.join",
+                return_value=self.temp_xml_file.name,
+            ),
+        ):
             text = extract_eligibility_criteria(trial_id)
             self.assertEqual(text, "Eligibility Content for Trial")
 
     def test_extract_eligibility_criteria_not_found(self):
         trial_id = "dummy_trial"
         # Return False for file existence.
-        with patch("src.Preprocessor.preprocessing_utils.os.path.exists", return_value=False):
+        with patch(
+            "src.Preprocessor.preprocessing_utils.os.path.exists", return_value=False
+        ):
             text = extract_eligibility_criteria(trial_id)
             self.assertIsNone(text)
 
@@ -207,7 +212,7 @@ class TestOtherTextProcessingFunctions(unittest.TestCase):
             "Inclusion Criteria:",
             "Patients must be over 18.",
             "Exclusion Criteria:",
-            "Patients with comorbidities."
+            "Patients with comorbidities.",
         ]
         sections = extract_criteria_sections_headers(lines)
         self.assertIsInstance(sections, dict)
@@ -227,7 +232,9 @@ class TestOtherTextProcessingFunctions(unittest.TestCase):
         text = "Inclusion Criteria: Patients must be over 18. Exclusion Criteria: Patients with comorbidities."
         regex_patterns = [r"Inclusion Criteria", r"Exclusion Criteria"]
         exception_patterns = []
-        result = extract_separate_inclusion_exclusion(text, regex_patterns, exception_patterns)
+        result = extract_separate_inclusion_exclusion(
+            text, regex_patterns, exception_patterns
+        )
         self.assertIn("Inclusion Criteria", result)
         self.assertIn("Exclusion Criteria", result)
         # The text for each header should be non-empty dictionaries.
@@ -242,12 +249,16 @@ class TestOtherTextProcessingFunctions(unittest.TestCase):
 
     def test_split_large_sentences(self):
         # Create a DataFrame with one long sentence.
-        df = pd.DataFrame({
-            "sentence": ["This is a very long sentence. It should be split. Here is another sentence."],
-            "criteria": ["Inclusion"],
-            "sub_criteria": ["General"],
-            "id": ["trial1"]
-        })
+        df = pd.DataFrame(
+            {
+                "sentence": [
+                    "This is a very long sentence. It should be split. Here is another sentence."
+                ],
+                "criteria": ["Inclusion"],
+                "sub_criteria": ["General"],
+                "id": ["trial1"],
+            }
+        )
         new_df = split_large_sentences(df)
         # We expect that if the threshold is 200 characters, a sentence shorter than that remains unchanged.
         self.assertFalse(new_df.empty)
@@ -257,29 +268,31 @@ class TestOtherTextProcessingFunctions(unittest.TestCase):
 class TestEICTextPreprocessing(unittest.TestCase):
     def setUp(self):
         # Create temporary dummy regex patterns files.
-        self.temp_regex_file = tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json")
+        self.temp_regex_file = tempfile.NamedTemporaryFile(
+            mode="w+", delete=False, suffix=".json"
+        )
         regex_data = {
             "patterns": {
                 "pattern1": {"regex": r"\d+\)"},
-                "pattern2": {"regex": r"[•*]"}
+                "pattern2": {"regex": r"[•*]"},
             }
         }
         json.dump(regex_data, self.temp_regex_file)
         self.temp_regex_file.close()
 
-        self.temp_exceptions_file = tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json")
-        exceptions_data = {
-            "patterns": {
-                "exception": {"regex": r"EXCEPTION"}
-            }
-        }
+        self.temp_exceptions_file = tempfile.NamedTemporaryFile(
+            mode="w+", delete=False, suffix=".json"
+        )
+        exceptions_data = {"patterns": {"exception": {"regex": r"EXCEPTION"}}}
         json.dump(exceptions_data, self.temp_exceptions_file)
         self.temp_exceptions_file.close()
 
         # Create a dummy eligibility criteria XML content.
         self.dummy_xml = "<root><eligibility><criteria><textblock>Inclusion Criteria: Patients over 18. Exclusion Criteria: Patients with comorbidities.</textblock></criteria></eligibility></root>"
         # Create a temporary XML file to be read by extract_eligibility_criteria.
-        self.temp_xml_file = tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".xml")
+        self.temp_xml_file = tempfile.NamedTemporaryFile(
+            mode="w+", delete=False, suffix=".xml"
+        )
         self.temp_xml_file.write(self.dummy_xml)
         self.temp_xml_file.close()
 
@@ -308,7 +321,7 @@ class TestEICTextPreprocessing(unittest.TestCase):
             _ids,
             regex_path=self.temp_regex_file.name,
             exceptions_path=self.temp_exceptions_file.name,
-            output_path=self.temp_output_dir
+            output_path=self.temp_output_dir,
         )
         self.assertIsNotNone(df)
         # Check that the DataFrame contains expected columns.
@@ -319,5 +332,5 @@ class TestEICTextPreprocessing(unittest.TestCase):
         self.assertTrue(any(f.endswith("_preprocessed.tsv") for f in files))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

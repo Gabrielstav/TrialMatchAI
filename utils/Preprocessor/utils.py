@@ -2,12 +2,12 @@ import requests
 import xml.etree.ElementTree as ET
 import os
 import time
-import json
 import re
-import gzip, tarfile
+
 
 def normalize_whitespace(s):
-    return ' '.join(s.split())
+    return " ".join(s.split())
+
 
 def download_study_info(nct_id, runs=2):
     local_file_path = f"../data/trials_xmls/{nct_id}.xml"
@@ -23,40 +23,46 @@ def download_study_info(nct_id, runs=2):
                 print(f"Error parsing XML for trial {nct_id}: {e}")
                 os.remove(local_file_path)
                 continue
-            
+
             # Download the online version of the XML
             url = f"https://clinicaltrials.gov/ct2/show/{nct_id}?displayxml=true"
             response = requests.get(url)
-            
+
             if response.status_code == 200:
                 online_xml_content = response.text
                 # Parse the XML content
                 online_root = ET.fromstring(online_xml_content)
                 to_check = ["eligibility", "brief_title", "overall_status", "location"]
-                
+
                 local_version = []
                 online_version = []
-                
+
                 for s in to_check:
                     local_elem = local_root.find(".//%s" % s)
                     online_elem = online_root.find(".//%s" % s)
-                    
+
                     # Check if the element exists in both versions
                     if local_elem is not None and online_elem is not None:
                         local_version.append(local_elem)
                         online_version.append(online_elem)
                     else:
                         continue
-                
-                is_updated = any([normalize_whitespace(ET.tostring(a, encoding='unicode').strip()) !=
-                                normalize_whitespace(ET.tostring(b, encoding='unicode').strip())
-                                for a, b in zip(local_version, online_version)])
-                
+
+                is_updated = any(
+                    [
+                        normalize_whitespace(ET.tostring(a, encoding="unicode").strip())
+                        != normalize_whitespace(
+                            ET.tostring(b, encoding="unicode").strip()
+                        )
+                        for a, b in zip(local_version, online_version)
+                    ]
+                )
+
                 if is_updated:
                     updated_cts.append(nct_id)
                     # Update the local XML with the online version
                     with open(local_file_path, "w") as f:
-                        f.write(ET.tostring(online_root, encoding='unicode'))
+                        f.write(ET.tostring(online_root, encoding="unicode"))
                     print(f"Updated eligibility criteria for {nct_id}")
                 else:
                     print(f"No changes in eligibility criteria for {nct_id}.")
@@ -70,14 +76,14 @@ def download_study_info(nct_id, runs=2):
                 if response.status_code == 200:
                     root = ET.fromstring(response.text)
                     with open(local_file_path, "w") as f:
-                        f.write(ET.tostring(root, encoding='unicode'))
+                        f.write(ET.tostring(root, encoding="unicode"))
                     downloaded = True
                     print(f"Study information downloaded for {nct_id}")
                 else:
                     print(f"Error downloading study information for {nct_id}")
-                
+
                 if not downloaded:
-                    print(f'Download of {nct_id}.xml failed. Retrying in 2 seconds...')
+                    print(f"Download of {nct_id}.xml failed. Retrying in 2 seconds...")
                     time.sleep(2)
     return updated_cts
 
@@ -134,19 +140,18 @@ def extract_study_info(nct_id):
         tree = ET.parse(f"../data/trials_xmls/{nct_id}.xml")
         root = tree.getroot()
         with open(f"../data/trials_xmls/{nct_id}_info.txt", "w") as f:
-            
             # Extract Long title
             official_title = root.find(".//official_title")
             if official_title is not None:
                 title_text = official_title.text.strip()
                 f.write(f"Long Title:\n{title_text}\n\n")
-                
+
             # Extract short title
             brief_title = root.find(".//brief_title")
             if brief_title is not None:
                 title_text = brief_title.text.strip()
                 f.write(f"Short Title:\n{title_text}\n\n")
-            
+
             # Extract cancer sites
             conditions = root.findall(".//condition")
             if conditions is not None:
@@ -167,20 +172,19 @@ def extract_study_info(nct_id):
             if end_date is not None:
                 end_date_text = end_date.text.strip()
                 f.write(f"End Date:\n{end_date_text}\n\n")
-                
+
             # Extract primary end date
             primary_end_date = root.find(".//primary_completion_date")
             if end_date is not None:
                 end_date_text = end_date.text.strip()
                 f.write(f"Primary End Date:\n{end_date_text}\n\n")
-            
-            
+
             # Extract overall status
             overall_status = root.find(".//overall_status")
             if overall_status is not None:
                 overall_status_text = overall_status.text.strip()
                 f.write(f"Overall Status:\n{overall_status_text}\n\n")
-                
+
             # Extract study phase
             study_phase = root.find(".//phase")
             if study_phase is not None:
@@ -191,19 +195,21 @@ def extract_study_info(nct_id):
             if study_type is not None:
                 study_type_text = study_type.text.strip()
                 f.write(f"Study Type:\n{study_type_text}\n\n")
-                
+
             # Extract brief summary
             brief_summary = root.find(".//brief_summary")
             if brief_summary is not None:
                 brief_summary_text = brief_summary.find(".//textblock").text.strip()
                 f.write(f"Brief Summary:\n{brief_summary_text}\n\n")
-                
+
             # Extract detailed description
             detailed_description = root.find(".//detailed_description")
             if detailed_description is not None:
-                detailed_description_text = detailed_description.find(".//textblock").text.strip()
+                detailed_description_text = detailed_description.find(
+                    ".//textblock"
+                ).text.strip()
                 f.write(f"Detailed Description:\n{detailed_description_text}\n\n")
-                
+
             # Extract number of arms
             number_of_arms = root.find(".//number_of_arms")
             if number_of_arms is not None:
@@ -221,11 +227,13 @@ def extract_study_info(nct_id):
                     else:
                         f.write(f"- {arm_group_label}\n")
                 f.write("\n")
-            
+
             # Extract eligibility criteria
             eligibility_criteria = root.find(".//eligibility/criteria")
             if eligibility_criteria is not None:
-                eligibility_criteria_text = eligibility_criteria.find(".//textblock").text.strip()
+                eligibility_criteria_text = eligibility_criteria.find(
+                    ".//textblock"
+                ).text.strip()
                 f.write(f"Eligibility Criteria:\n{eligibility_criteria_text}\n\n")
 
             # Extract gender
@@ -239,7 +247,7 @@ def extract_study_info(nct_id):
             if min_age is not None:
                 min_age_text = min_age.text.strip()
                 f.write(f"Minimum Age:\n{min_age_text}\n\n")
-            
+
             # Extract maximum age
             max_age = root.find(".//eligibility/maximum_age")
             if max_age is not None:
@@ -254,7 +262,7 @@ def extract_study_info(nct_id):
                     intervention_name = i.find(".//intervention_name").text.strip()
                     f.write(f"- {intervention_name}\n")
                 f.write("\n")
-                
+
             # Extract locations
             locations = root.findall(".//location")
             if locations is not None:
@@ -269,8 +277,8 @@ def extract_study_info(nct_id):
 
     print(f"{nct_id} info extracted and saved to {nct_id}_info.txt")
 
-def add_spaces_around_punctuation(text):
 
+def add_spaces_around_punctuation(text):
     """
     Add spaces around punctuation
 
@@ -284,7 +292,7 @@ def add_spaces_around_punctuation(text):
     str
         The preprocessed text
     """
-    text = re.sub(r'([.,!?()])', r' \1 ', text)
+    text = re.sub(r"([.,!?()])", r" \1 ", text)
     return text
 
 
@@ -302,8 +310,9 @@ def remove_special_characters(text):
     str
         The preprocessed text
     """
-    text = re.sub(r'[^a-zA-Z0-9]', ' ', text)
+    text = re.sub(r"[^a-zA-Z0-9]", " ", text)
     return text
+
 
 def remove_dashes_at_the_start_of_sentences(text):
     """
@@ -319,7 +328,7 @@ def remove_dashes_at_the_start_of_sentences(text):
     str
         The preprocessed text
     """
-    text = re.sub(r'^- ', '', text)
+    text = re.sub(r"^- ", "", text)
     return text
 
 
@@ -365,7 +374,7 @@ def post_process_entities(entities):
                 "score": entity["score"],
                 "word": entity["word"].replace("##", " "),
                 "start": entity["start"],
-                "end": entity["end"]
+                "end": entity["end"],
             }
         elif entity["entity"].startswith("I-"):
             if (current_entity is not None) and entity["word"].startswith("##"):
@@ -420,6 +429,7 @@ def get_dictionaries_with_values(list_of_dicts, key, values):
     """
     return [d for d in list_of_dicts if any(val in d.get(key, []) for val in values)]
 
+
 def resolve_ner_overlaps(ner1_results, ner2_results):
     """
     Resolve overlaps between entities detected by two named entity recognition (NER) models.
@@ -463,16 +473,16 @@ def resolve_ner_overlaps(ner1_results, ner2_results):
     resolved_results = []
     # Iterate over the entities detected by the first NER model
     for entity1 in ner1_results:
-        entity1_start = entity1['start']
-        entity1_end = entity1['end']
-        entity1_label = entity1['entity_group']
+        entity1_start = entity1["start"]
+        entity1_end = entity1["end"]
+        entity1_label = entity1["entity_group"]
 
         # Check if the entity from the first model overlaps with any entity from the second model
         overlaps = False
         for entity2 in ner2_results:
-            entity2_start = entity2['start']
-            entity2_end = entity2['end']
-            entity2_label = entity2['entity_group']
+            entity2_start = entity2["start"]
+            entity2_end = entity2["end"]
+            entity2_label = entity2["entity_group"]
 
             if entity1_start < entity2_end and entity1_end > entity2_start:
                 overlaps = True
@@ -484,15 +494,15 @@ def resolve_ner_overlaps(ner1_results, ner2_results):
 
     # Add entities from the second model that don't overlap with any entities from the first model
     for entity2 in ner2_results:
-        entity2_start = entity2['start']
-        entity2_end = entity2['end']
-        entity2_label = entity2['entity_group']
+        entity2_start = entity2["start"]
+        entity2_end = entity2["end"]
+        entity2_label = entity2["entity_group"]
 
         overlaps = False
         for entity1 in resolved_results:
-            entity1_start = entity1['start']
-            entity1_end = entity1['end']
-            entity1_label = entity1['entity_group']
+            entity1_start = entity1["start"]
+            entity1_end = entity1["end"]
+            entity1_label = entity1["entity_group"]
 
             if entity2_start < entity1_end and entity2_end > entity1_start:
                 overlaps = True
@@ -502,6 +512,7 @@ def resolve_ner_overlaps(ner1_results, ner2_results):
             resolved_results.append(entity2)
 
     return resolved_results
+
 
 def extract_eligibility_criteria(trial_id):
     """
@@ -519,10 +530,10 @@ def extract_eligibility_criteria(trial_id):
         str or None: The extracted eligibility criteria text for the specified trial if found,
                     otherwise None.
     """
-    xml_file_path = f'../data/trials_xmls/{trial_id}.xml'
+    xml_file_path = f"../data/trials_xmls/{trial_id}.xml"
 
     if os.path.exists(xml_file_path):
-        with open(xml_file_path, 'r') as xml_file:
+        with open(xml_file_path, "r") as xml_file:
             xml_content = xml_file.read()
         try:
             tree = ET.ElementTree(ET.fromstring(xml_content))
@@ -540,7 +551,6 @@ def extract_eligibility_criteria(trial_id):
 
     # If the trial ID is not found or the eligibility criteria textblock is missing, return None
     return None
-
 
 
 def replace_parentheses_with_braces(text):
@@ -561,10 +571,10 @@ def replace_parentheses_with_braces(text):
     stack = []
     result = ""
     for char in text:
-        if char == '(' or char == '[':
+        if char == "(" or char == "[":
             stack.append(char)
             result += "{"
-        elif char == ')' or char == "]":
+        elif char == ")" or char == "]":
             if stack:
                 stack.pop()
                 result += "}"
@@ -573,8 +583,6 @@ def replace_parentheses_with_braces(text):
         else:
             result += char
     return result
-
-
 
 
 def line_starts_with_capitalized_alphanumeric(line):
@@ -593,4 +601,3 @@ def line_starts_with_capitalized_alphanumeric(line):
         if first_word[0].isalpha() and first_word[0].isupper():
             return True
     return False
-

@@ -1,7 +1,10 @@
 import os
 import shutil
 
-def flatten_folder_structure(root_dir, output_dir, separator="_", handle_duplicates=True):
+
+def flatten_folder_structure(
+    root_dir, output_dir, separator="_", handle_duplicates=True
+):
     os.makedirs(output_dir, exist_ok=True)
     filename_set = set()
 
@@ -9,9 +12,9 @@ def flatten_folder_structure(root_dir, output_dir, separator="_", handle_duplica
         # Skip the root directory itself
         if subdir == root_dir:
             continue
-        
+
         parent_folder = os.path.basename(subdir)
-        
+
         for file in files:
             old_path = os.path.join(subdir, file)
             new_filename = f"{parent_folder}{separator}{file}"
@@ -29,7 +32,10 @@ def flatten_folder_structure(root_dir, output_dir, separator="_", handle_duplica
             shutil.copy2(old_path, new_path)
             print(f"Copied: {old_path} → {new_path}")
 
+
 # Example usage:
 root_directory = "/home/mabdallah/scratch/TrialMatchAI/src/Indexer/processed_criteria"
-output_directory = "/home/mabdallah/scratch/TrialMatchAI/src/Indexer/processed_criteria_flattened"
+output_directory = (
+    "/home/mabdallah/scratch/TrialMatchAI/src/Indexer/processed_criteria_flattened"
+)
 flatten_folder_structure(root_directory, output_directory)

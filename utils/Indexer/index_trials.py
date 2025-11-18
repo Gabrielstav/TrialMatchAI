@@ -7,8 +7,10 @@ from pathlib import Path
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 
+
 def load_config(path: str) -> dict:
     return json.loads(Path(path).read_text())
+
 
 def make_es_client(cfg: dict) -> Elasticsearch:
     es_conf = cfg["elasticsearch"]
@@ -16,8 +18,9 @@ def make_es_client(cfg: dict) -> Elasticsearch:
         hosts=es_conf["hosts"],
         basic_auth=(es_conf["username"], es_conf["password"]),
         ca_certs=es_conf["ca_certs"],
-        verify_certs=True
+        verify_certs=True,
     )
+
 
 def detect_vector_dim(sample: dict) -> int:
     for k, v in sample.items():
@@ -25,12 +28,14 @@ def detect_vector_dim(sample: dict) -> int:
             return len(v)
     raise ValueError("No vector field found in sample")
 
+
 def load_processed(folder: Path) -> list[dict]:
     docs = []
     for fn in os.listdir(folder):
         if fn.endswith(".json"):
             docs.append(json.loads((folder / fn).read_text()))
     return docs
+
 
 def create_index(es: Elasticsearch, name: str, dims: int):
     body = {
@@ -40,7 +45,7 @@ def create_index(es: Elasticsearch, name: str, dims: int):
                     "standard_lowercase": {
                         "type": "custom",
                         "tokenizer": "standard",
-                        "filter": ["lowercase"]
+                        "filter": ["lowercase"],
                     }
                 }
             }
@@ -62,7 +67,7 @@ def create_index(es: Elasticsearch, name: str, dims: int):
                 "intervention": {
                     "properties": {
                         "intervention_type": {"type": "keyword"},
-                        "intervention_name": {"type": "text"}
+                        "intervention_name": {"type": "text"},
                     }
                 },
                 "gender": {"type": "keyword"},
@@ -71,46 +76,45 @@ def create_index(es: Elasticsearch, name: str, dims: int):
                 "location": {
                     "properties": {
                         "location_name": {"type": "text"},
-                        "location_address": {"type": "text"}
+                        "location_address": {"type": "text"},
                     }
                 },
                 "reference": {
                     "type": "nested",
                     "properties": {
                         "citation": {"type": "text"},
-                        "PMID": {"type": "keyword"}
-                    }
+                        "PMID": {"type": "keyword"},
+                    },
                 },
-                "eligibility_criteria": {"type": "text", "analyzer": "standard_lowercase"},
-                "eligibility_criteria_vector": {"type": "dense_vector", "dims": dims}
+                "eligibility_criteria": {
+                    "type": "text",
+                    "analyzer": "standard_lowercase",
+                },
+                "eligibility_criteria_vector": {"type": "dense_vector", "dims": dims},
             }
-        }
+        },
     }
     es.indices.create(index=name, body=body)
     print(f"Created index `{name}` with vector dims={dims}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Bulk‑index processed trial JSONs")
     parser.add_argument(
         "--config",
         required=True,
-        help="Path to JSON config file with Elasticsearch credentials"
+        help="Path to JSON config file with Elasticsearch credentials",
     )
     parser.add_argument(
-        "--processed-folder",
-        required=True,
-        help="Folder of processed JSONs to index"
+        "--processed-folder", required=True, help="Folder of processed JSONs to index"
     )
     parser.add_argument(
         "--index-name",
         default="clinical_trials",
-        help="Target Elasticsearch index name"
+        help="Target Elasticsearch index name",
     )
     parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=100,
-        help="Number of docs per bulk request"
+        "--batch-size", type=int, default=100, help="Number of docs per bulk request"
     )
     args = parser.parse_args()
 
@@ -136,7 +140,7 @@ def main():
             "_op_type": "index",
             "_index": args.index_name,
             "_id": doc["nct_id"],
-            "_source": doc
+            "_source": doc,
         }
         for doc in docs
     ]
@@ -146,10 +150,11 @@ def main():
         actions=actions,
         chunk_size=args.batch_size,
         stats_only=True,
-        raise_on_error=False
+        raise_on_error=False,
     )
     es.indices.refresh(index=args.index_name)
     print(f"✅ Indexed {success} documents; {failures} failures.")
+
 
 if __name__ == "__main__":
     main()

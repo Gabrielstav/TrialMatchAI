@@ -5,22 +5,32 @@ from langchain_community.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage
 from pydantic import BaseModel, Field
 import re
+
 # Set OpenAI API key
 os.environ["OPENAI_API_KEY"] = ""
 
+
 # Define the schema for structured output
 class PatientStory(BaseModel):
-    condition: Optional[str] = Field(default=None, description="The main condition of the patient.")
-    synonyms: Optional[List[str]] = Field(default=None, description="Synonyms or related terms for the main condition.")
+    condition: Optional[str] = Field(
+        default=None, description="The main condition of the patient."
+    )
+    synonyms: Optional[List[str]] = Field(
+        default=None, description="Synonyms or related terms for the main condition."
+    )
     age: Optional[str] = Field(default=None, description="The age of the patient.")
-    gender: Optional[str] = Field(default=None, description="The gender of the patient.")
+    gender: Optional[str] = Field(
+        default=None, description="The gender of the patient."
+    )
     meaningful_sentences: List[str] = Field(
         description="A list of factual, meaningful sentences describing the patient's conditions and entities."
     )
 
+
 # Initialize OpenAI LLM
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.5, top_p=0.9)
-    
+
+
 # Function to extract age and gender from the raw description
 def extract_age_and_gender(description: str) -> Dict[str, Optional[str]]:
     """
@@ -30,8 +40,8 @@ def extract_age_and_gender(description: str) -> Dict[str, Optional[str]]:
     gender = None
 
     # Regex patterns for extracting age and gender
-    age_pattern = r'(\b\d{1,3}\b)-?(year-old|yr-old|years old)'
-    gender_pattern = r'\b(male|female|man|woman|boy|girl|gentleman|lady)\b'
+    age_pattern = r"(\b\d{1,3}\b)-?(year-old|yr-old|years old)"
+    gender_pattern = r"\b(male|female|man|woman|boy|girl|gentleman|lady)\b"
 
     age_match = re.search(age_pattern, description, re.IGNORECASE)
     gender_match = re.search(gender_pattern, description, re.IGNORECASE)
@@ -48,6 +58,7 @@ def extract_age_and_gender(description: str) -> Dict[str, Optional[str]]:
         gender = "female"
 
     return {"age": age, "gender": gender}
+
 
 # Function to create meaningful sentences for entities
 def generate_sentences(description: str, entities: List[str]) -> List[str]:
@@ -73,14 +84,19 @@ def generate_sentences(description: str, entities: List[str]) -> List[str]:
 
     Provide the output as a JSON object with the key 'meaningful_sentences' containing the list of sentences.
     """
-    response = llm.invoke([HumanMessage(content=prompt)])  # Use invoke for LangChain models
+    response = llm.invoke(
+        [HumanMessage(content=prompt)]
+    )  # Use invoke for LangChain models
     try:
         # Clean Markdown formatting if present
-        structured_output = response.content.strip().strip("```json").strip("```").strip()
+        structured_output = (
+            response.content.strip().strip("```json").strip("```").strip()
+        )
         return PatientStory.parse_raw(structured_output).meaningful_sentences
     except Exception as e:
         print(f"Error parsing response: {e}")
         return [f"Error generating sentences for description: {description}"]
+
 
 # Function to prompt the model to extract the patient's age and gender
 def prompt_extract_age_and_gender(description: str) -> Dict[str, Optional[str]]:
@@ -104,13 +120,19 @@ def prompt_extract_age_and_gender(description: str) -> Dict[str, Optional[str]]:
     response = llm.invoke([HumanMessage(content=prompt)])
     try:
         # Parse the JSON response from the model
-        structured_output = response.content.strip().strip("```json").strip("```").strip()
+        structured_output = (
+            response.content.strip().strip("```json").strip("```").strip()
+        )
         extracted_info = json.loads(structured_output)
-        return {"age": extracted_info.get("age"), "gender": extracted_info.get("gender")}
+        return {
+            "age": extracted_info.get("age"),
+            "gender": extracted_info.get("gender"),
+        }
     except Exception as e:
         print(f"Error extracting age and gender: {e}")
         return {"age": None, "gender": None}
-    
+
+
 def prompt_extract_main_condition(description: str) -> Dict[str, Optional[str]]:
     """
     Uses the model to extract the main condition from the patient description.
@@ -133,37 +155,43 @@ def prompt_extract_main_condition(description: str) -> Dict[str, Optional[str]]:
     response = llm.invoke([HumanMessage(content=prompt)])
     try:
         # Parse the JSON response from the model
-        structured_output = response.content.strip().strip("```json").strip("```").strip()
+        structured_output = (
+            response.content.strip().strip("```json").strip("```").strip()
+        )
         extracted_info = json.loads(structured_output)
-        return {"condition": extracted_info.get("condition"), "synonyms": extracted_info.get("synonyms")}
+        return {
+            "condition": extracted_info.get("condition"),
+            "synonyms": extracted_info.get("synonyms"),
+        }
     except Exception as e:
         print(f"Error extracting main condition: {e}")
         return {"condition": None, "synonyms": None}
-    
+
+
 # Update the process_file function to use the new age and gender prompt
 def process_file_with_prompt(input_file: str, output_file: str):
     """
     Reads patient data from the input file, prompts the model to extract age and gender,
     generates expanded sentences for each patient's entities, and writes the output to the output file.
     """
-    with open(input_file, 'r') as file:
+    with open(input_file, "r") as file:
         data = json.load(file)
-    
+
     results = {}
     for patient_id, patient_data in data.items():
         print(f"Processing patient {patient_id}...")
         raw_description = patient_data.get("raw", "")
         conditions = patient_data.get("gpt-4-turbo", {}).get("conditions", [])
-        
+
         # Prompt the model to extract age and gender
         age_gender_info = prompt_extract_age_and_gender(raw_description)
 
         # Generate meaningful sentences
         expanded_sentences = generate_sentences(raw_description, conditions)
-        
+
         # Get the main condition
         main_condition_info = prompt_extract_main_condition(raw_description)
-        
+
         # Save the processed result
         results[patient_id] = {
             "raw_description": raw_description,
@@ -172,16 +200,19 @@ def process_file_with_prompt(input_file: str, output_file: str):
             "main_condition": main_condition_info.get("condition"),
             "synonyms": main_condition_info.get("synonyms"),
             "conditions": conditions,
-            "expanded_sentences": expanded_sentences     
+            "expanded_sentences": expanded_sentences,
         }
-    
+
     # Write the results to the output file
-    with open(output_file, 'w') as file:
+    with open(output_file, "w") as file:
         json.dump(results, file, indent=2)
     print(f"Processing complete. Results saved to {output_file}")
 
+
 # Main script
 if __name__ == "__main__":
-    input_file = "../../data/id2queries21.json"  # Replace with the path to your input JSON file
+    input_file = (
+        "../../data/id2queries21.json"  # Replace with the path to your input JSON file
+    )
     output_file = "processed_patients21.json"  # Path to save the processed output
     process_file_with_prompt(input_file, output_file)
