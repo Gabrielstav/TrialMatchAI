@@ -2,9 +2,10 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
 
 from dateutil import parser as date_parser
-from elasticsearch import Elasticsearch
 from Matcher.models.embedding.query_embedder import QueryEmbedder
 from Matcher.utils.logging_config import setup_logging
+
+from elasticsearch import Elasticsearch
 
 logger = setup_logging()
 
@@ -191,6 +192,26 @@ class ClinicalTrialSearch:
                     }
                 }
             )
+
+        # Cap conditions to prevent too many ES clauses (each condition creates 2 clauses)
+        # ES default maxClauseCount is 1024, leaving room for filters and other clauses
+        max_conditions_per_query = 800  # Conservative limit
+        all_conditions = synonyms + (other_conditions or [])
+        if len(all_conditions) > max_conditions_per_query:
+            logger.warning(
+                f"Capping search conditions from {len(all_conditions)} to {max_conditions_per_query} to avoid ES clause limit"
+            )
+            # Prioritize synonyms over other_conditions
+            capped_synonyms = synonyms[:max_conditions_per_query]
+            remaining_slots = max_conditions_per_query - len(capped_synonyms)
+            capped_other = (
+                (other_conditions or [])[:remaining_slots]
+                if remaining_slots > 0
+                else []
+            )
+            synonyms = capped_synonyms
+            other_conditions = capped_other
+
         should_clauses = []
         for condition in synonyms + (other_conditions or []):
             if condition:
@@ -211,6 +232,10 @@ class ClinicalTrialSearch:
                         multi_match["operator"] = "and"
                     should_clauses.append({"multi_match": multi_match})
 
+        logger.info(
+            f"Created query with {len(should_clauses)} should clauses for {len(synonyms)} synonyms and {len(other_conditions or [])} other conditions"
+        )
+
         search_mode = (search_mode or "hybrid").lower()
         if search_mode == "bm25":
             return {
@@ -223,11 +248,18 @@ class ClinicalTrialSearch:
 
         # Prepare vectors for vector/hybrid
         query_vectors = list(embeddings.values())
-        other_vectors = (
-            list(self.embedder.get_embeddings(other_conditions).values())
-            if other_conditions
-            else []
-        )
+        other_vectors = []
+        if other_conditions and self.embedder:
+            # Filter other_conditions to ensure it's a valid list of non-empty strings
+            valid_other_conditions = [
+                str(cond).strip()
+                for cond in other_conditions
+                if cond and str(cond).strip()
+            ]
+            if valid_other_conditions:
+                other_vectors = list(
+                    self.embedder.get_embeddings(valid_other_conditions).values()
+                )
 
         if search_mode == "vector":
             return {

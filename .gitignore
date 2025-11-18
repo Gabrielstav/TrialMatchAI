@@ -2,16 +2,22 @@
 data/
 results/
 src/
+ablation/
 utils/finetuning/
 source/models
 source/Parser/resources
 source/Parser/models
 elasticsearch/sif
-
+elasticsearch/data1
+elasticsearch/data
+elasticsearch/logs
+source/Parser/input
+source/Parser/output
+Parser/logs
 # Ignore Python cache files
 __pycache__/
 *.py[cod]
-
+logs/
 # Ignore other cache or temporary files
 *.log
 *.tmp

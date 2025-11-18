@@ -13,7 +13,9 @@ from .models.embedding.query_embedder import QueryEmbedder
 from .models.embedding.sentence_embedder import SecondLevelSentenceEmbedder
 from .models.llm.llm_loader import load_model_and_tokenizer
 from .models.llm.llm_reranker import LLMReranker
+from .models.llm.vllm_loader import load_vllm_engine
 from .pipeline.cot_reasoning import BatchTrialProcessor
+from .pipeline.cot_reasoning_vllm import BatchTrialProcessorVLLM
 from .pipeline.phenopacket_processor import process_phenopacket
 from .pipeline.trial_ranker import (
     load_trial_data,
@@ -157,23 +159,55 @@ def run_rag_processing(
         logger.error("No patient profile available for RAG processing.")
         return
 
-    batch_size = min(config["rag"]["batch_size"] * 2, 8)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    # Check if vLLM backend is configured
+    cot_backend = config.get("cot_backend", "default")
+    use_vllm = cot_backend == "vllm"
 
-    rag_processor = BatchTrialProcessor(
-        model,
-        tokenizer,
-        device=config["global"]["device"],
-        batch_size=batch_size,
-    )
+    if use_vllm:
+        logger.info("Using vLLM backend for CoT reasoning")
+
+        # Load vLLM configuration
+        vllm_cfg = config.get("vllm", {})
+
+        # Load vLLM engine
+        vllm_engine, vllm_tokenizer, lora_request = load_vllm_engine(
+            model_config=config.get("model", {}),
+            vllm_cfg=vllm_cfg,
+        )
+
+        # Create vLLM processor
+        rag_processor = BatchTrialProcessorVLLM(
+            llm=vllm_engine,  # type: ignore
+            tokenizer=vllm_tokenizer,
+            batch_size=vllm_cfg.get("batch_size", 16),
+            use_cot=config.get("use_cot_reasoning", True),
+            max_new_tokens=vllm_cfg.get("max_new_tokens", 5000),
+            temperature=vllm_cfg.get("temperature", 0.0),
+            top_p=vllm_cfg.get("top_p", 1.0),
+            seed=vllm_cfg.get("seed", 1234),
+            length_bucket=vllm_cfg.get("length_bucket", True),
+            lora_request=lora_request,
+        )
+    else:
+        logger.info("Using default (HuggingFace) backend for CoT reasoning")
+
+        batch_size = min(config["rag"]["batch_size"] * 2, 8)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+        rag_processor = BatchTrialProcessor(
+            model,
+            tokenizer,
+            device=config["global"]["device"],
+            batch_size=batch_size,
+        )
+
     rag_processor.process_trials(
         nct_ids=top_trials,
         json_folder=config["paths"]["trials_json_folder"],
         output_folder=output_folder,
         patient_profile=patient_profile,
     )
-
     write_json_file({"status": "done"}, f"{output_folder}/rag_output.json")
     logger.info("RAG-based trial matching complete.")
 
@@ -200,13 +234,13 @@ def main_pipeline():
             config["model"], config["global"]["device"]
         )
 
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-        if hasattr(model.config, "pad_token_id") and model.config.pad_token_id is None:
-            model.config.pad_token_id = tokenizer.pad_token_id
+    if tokenizer.pad_token is None:  # type: ignore
+        tokenizer.pad_token = tokenizer.eos_token  # type: ignore
+        if hasattr(model.config, "pad_token_id") and model.config.pad_token_id is None:  # type: ignore
+            model.config.pad_token_id = tokenizer.pad_token_id  # type: ignore
 
     if config["global"]["device"] != "cpu" and torch.cuda.is_available():
-        model = model.half()
+        model = model.half()  # type: ignore
 
     # Initialize components
     first_level_embedder = QueryEmbedder(model_name=config["embedder"]["model_name"])
@@ -290,7 +324,7 @@ def main_pipeline():
         ) = result
 
         with torch.no_grad():
-            semi_final_trials, top_trials_path = run_second_level_search(
+            _, top_trials_path = run_second_level_search(
                 output_folder,
                 nct_ids,
                 main_conditions,

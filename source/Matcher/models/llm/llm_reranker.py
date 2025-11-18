@@ -2,7 +2,7 @@ import re
 import threading
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import torch
 import torch.nn.functional as F
@@ -18,7 +18,7 @@ class LLMReranker:
     def __init__(
         self,
         model_path: str,
-        adapter_path: str = None,
+        adapter_path: Optional[str] = None,
         device: int = 0,
         torch_dtype=torch.float16,
         batch_size: int = 8,
