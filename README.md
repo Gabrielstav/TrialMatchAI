@@ -121,3 +121,5 @@ Please follow our code style and include tests where applicable.
 For questions, issues, or feature requests, open an issue on GitHub or reach out to:
 
 - **Email**: [abdallahmajd7@gmail.com](mailto:abdallahmajd7@gmail.com)
+
+You can also cite this project using its DOI : https://doi.org/10.5281/zenodo.18329084 and its [arXiv page](https://arxiv.org/abs/2505.08508).
