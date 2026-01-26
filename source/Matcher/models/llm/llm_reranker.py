@@ -11,7 +11,7 @@ from peft import PeftModel
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-logger = setup_logging()
+logger = setup_logging(__name__)
 
 
 class LLMReranker:

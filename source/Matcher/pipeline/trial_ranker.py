@@ -4,7 +4,7 @@ from typing import Dict, List
 from Matcher.utils.file_utils import read_json_file, write_json_file
 from Matcher.utils.logging_config import setup_logging
 
-logger = setup_logging()
+logger = setup_logging(__name__)
 
 
 def load_trial_data(json_folder: str) -> List[Dict]:

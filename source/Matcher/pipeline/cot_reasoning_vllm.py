@@ -17,7 +17,7 @@ try:
 except Exception:  # pragma: no cover
     LoRARequest = None  # type: ignore
 
-logger = setup_logging()
+logger = setup_logging(__name__)
 
 
 class BatchTrialProcessorVLLM:
