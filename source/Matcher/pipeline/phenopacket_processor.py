@@ -3,12 +3,13 @@ import re
 from typing import Dict, List, Optional
 
 import torch
+from Matcher.schemas.phenopacket import Phenopacket
 from Matcher.utils.file_utils import read_json_file, write_json_file
 from Matcher.utils.logging_config import setup_logging
 from Matcher.utils.temporal_utils import parse_iso_duration, parse_temporal
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-logger = setup_logging()
+logger = setup_logging(__name__)
 
 
 class PhenopacketProcessor:
@@ -19,11 +20,11 @@ class PhenopacketProcessor:
 
     def _load_and_validate(self, file_path: str) -> Dict:
         data = read_json_file(file_path)
-        required_fields = ["id", "metaData", "subject"]
-        for field in required_fields:
-            if field not in data:
-                raise ValueError(f"Invalid Phenopacket: Missing required field {field}")
-        logger.info("Phenopacket loaded and validated successfully.")
+        try:
+            Phenopacket.model_validate(data)
+            logger.info("Phenopacket loaded and validated successfully.")
+        except Exception as exc:
+            raise ValueError(f"Invalid Phenopacket: {exc}") from exc
         return data
 
     def _add_medical_sentence(self, category: str, content: str):
