@@ -19,7 +19,7 @@ This software is provided for research and informational purposes only. It is no
 - Python: 3.8+
 - Java: required for NER/normalization components
 - Elasticsearch: Docker Compose or Apptainer
-- GPU: NVIDIA recommended for large-scale processing
+- GPU: NVIDIA gpu with at least 40 GB of VRAM is recommended for large-scale processing
 - Disk space: 100 GB+ for datasets and indices
 
 ## Quickstart (uv recommended)
