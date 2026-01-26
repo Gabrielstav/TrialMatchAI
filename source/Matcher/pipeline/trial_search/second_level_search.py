@@ -3,14 +3,15 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional
 
-from Matcher.models.embedding.sentence_embedder import SecondLevelSentenceEmbedder
+from Matcher.models.embedding.text_embedder import TextEmbedder
 from Matcher.models.llm.llm_reranker import LLMReranker
 from Matcher.utils.file_utils import write_text_file
 from Matcher.utils.logging_config import setup_logging
+from Matcher.utils.retry import with_retries
 
 from elasticsearch import Elasticsearch
 
-logger = setup_logging()
+logger = setup_logging(__name__)
 
 
 class SecondStageRetriever:
@@ -18,7 +19,7 @@ class SecondStageRetriever:
         self,
         es_client: Elasticsearch,
         llm_reranker: Optional[LLMReranker],  # Make optional
-        embedder: SecondLevelSentenceEmbedder,
+        embedder: Optional[TextEmbedder],
         index_name: str,
         size: int = 250,
         inclusion_weight: float = 1.0,
@@ -107,7 +108,13 @@ class SecondStageRetriever:
                     )
                     return execute_query_bm25(query)
 
-                query_vector = self.embedder.get_embeddings(query)
+                vectors = self.embedder.embed_texts([query])
+                if not vectors:
+                    logger.warning(
+                        "Empty query after preprocessing. Falling back to BM25."
+                    )
+                    return execute_query_bm25(query)
+                query_vector = vectors[0]
                 es_query = {
                     "script_score": {
                         "query": {
@@ -138,7 +145,13 @@ class SecondStageRetriever:
                     )
                     return execute_query_bm25(query)
 
-                query_vector = self.embedder.get_embeddings(query)
+                vectors = self.embedder.embed_texts([query])
+                if not vectors:
+                    logger.warning(
+                        "Empty query after preprocessing. Falling back to BM25."
+                    )
+                    return execute_query_bm25(query)
+                query_vector = vectors[0]
                 es_query = {
                     "script_score": {
                         "query": {
@@ -191,14 +204,25 @@ class SecondStageRetriever:
                     }
                 }
 
-            response = self.es_client.search(
-                index=self.index_name, body={"size": self.size, "query": es_query}
-            )
-            hits = response["hits"]["hits"]
-            logger.info(
-                f"[{self.search_mode}] Retrieved {len(hits)} documents for query: '{query}'"
-            )
-            return query, hits
+            try:
+                response = with_retries(
+                    lambda: self.es_client.search(
+                        index=self.index_name, body={"size": self.size, "query": es_query}
+                    ),
+                    logger=logger,
+                    action="ES criteria search",
+                )
+                hits = response["hits"]["hits"]
+                logger.info(
+                    "[%s] Retrieved %s documents for query: '%s'",
+                    self.search_mode,
+                    len(hits),
+                    query,
+                )
+                return query, hits
+            except Exception:
+                logger.exception("Second-level search failed for query: %s", query)
+                return query, []
 
         def execute_query_bm25(query):
             # Helper function for BM25-only fallback
@@ -238,12 +262,22 @@ class SecondStageRetriever:
                     "filter": {"terms": {"nct_id": nct_ids}},
                 }
             }
-            response = self.es_client.search(
-                index=self.index_name, body={"size": self.size, "query": es_query}
-            )
-            hits = response["hits"]["hits"]
-            logger.info(f"[bm25] Retrieved {len(hits)} documents for query: '{query}'")
-            return query, hits
+            try:
+                response = with_retries(
+                    lambda: self.es_client.search(
+                        index=self.index_name, body={"size": self.size, "query": es_query}
+                    ),
+                    logger=logger,
+                    action="ES criteria bm25 search",
+                )
+                hits = response["hits"]["hits"]
+                logger.info(
+                    "[bm25] Retrieved %s documents for query: '%s'", len(hits), query
+                )
+                return query, hits
+            except Exception:
+                logger.exception("BM25 search failed for query: %s", query)
+                return query, []
 
         with ThreadPoolExecutor(max_workers=min(8, len(queries))) as executor:
             future_to_query = {

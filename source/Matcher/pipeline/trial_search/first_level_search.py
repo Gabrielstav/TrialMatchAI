@@ -2,19 +2,20 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
 
 from dateutil import parser as date_parser
-from Matcher.models.embedding.query_embedder import QueryEmbedder
+from Matcher.models.embedding.text_embedder import TextEmbedder
 from Matcher.utils.logging_config import setup_logging
+from Matcher.utils.retry import with_retries
 
 from elasticsearch import Elasticsearch
 
-logger = setup_logging()
+logger = setup_logging(__name__)
 
 
 class ClinicalTrialSearch:
     def __init__(
         self,
         es_client: Elasticsearch,
-        embedder: QueryEmbedder,
+        embedder: Optional[TextEmbedder],
         index_name: str,
         bio_med_ner,
     ):
@@ -91,19 +92,27 @@ class ClinicalTrialSearch:
             }
             for syn in synonyms
         ]
-        response = self.es_client.search(
-            index=self.index_name,
-            body={
-                "size": 1,
-                "query": {
-                    "bool": {"should": should_clauses, "minimum_should_match": 0}
-                },
-                "track_total_hits": False,
-                "_source": False,
-            },
-        )
-        max_score = response["hits"]["max_score"]
-        return max_score if max_score else 1.0
+        try:
+            response = with_retries(
+                lambda: self.es_client.search(
+                    index=self.index_name,
+                    body={
+                        "size": 1,
+                        "query": {
+                            "bool": {"should": should_clauses, "minimum_should_match": 0}
+                        },
+                        "track_total_hits": False,
+                        "_source": False,
+                    },
+                ),
+                logger=logger,
+                action="ES max_text_score search",
+            )
+            max_score = response["hits"]["max_score"]
+            return max_score if max_score else 1.0
+        except Exception:
+            logger.exception("Failed to compute max text score; defaulting to 1.0")
+            return 1.0
 
     def create_query(
         self,
@@ -247,19 +256,14 @@ class ClinicalTrialSearch:
             }
 
         # Prepare vectors for vector/hybrid
-        query_vectors = list(embeddings.values())
-        other_vectors = []
-        if other_conditions and self.embedder:
-            # Filter other_conditions to ensure it's a valid list of non-empty strings
-            valid_other_conditions = [
-                str(cond).strip()
-                for cond in other_conditions
-                if cond and str(cond).strip()
-            ]
-            if valid_other_conditions:
-                other_vectors = list(
-                    self.embedder.get_embeddings(valid_other_conditions).values()
-                )
+        query_vectors = [
+            embeddings[term] for term in synonyms if term in embeddings and term
+        ]
+        other_vectors = [
+            embeddings[term]
+            for term in (other_conditions or [])
+            if term in embeddings and term
+        ]
 
         if search_mode == "vector":
             return {
@@ -402,13 +406,20 @@ class ClinicalTrialSearch:
                 raise ValueError("Could not parse age input.")
         else:
             age = None
-        primary_synonyms = [condition] + (synonyms or [])
-        all_terms = primary_synonyms + (other_conditions or [])
+        primary_synonyms = _clean_terms([condition] + (synonyms or []))
+        other_conditions = _clean_terms(other_conditions or [])
+        all_terms = primary_synonyms + other_conditions
 
         mode = (search_mode or "hybrid").lower()
         embeddings: Dict[str, List[float]] = {}
         if mode in {"vector", "hybrid"} and self.embedder is not None:
-            embeddings = self.embedder.get_embeddings(all_terms)
+            vectors = self.embedder.embed_texts(all_terms)
+            embeddings = dict(zip(all_terms, vectors))
+            if not embeddings:
+                logger.warning(
+                    "No valid terms to embed for vector search. Falling back to BM25 only."
+                )
+                mode = "bm25"
         elif mode in {"vector", "hybrid"} and self.embedder is None:
             logger.warning(
                 "Vector/hybrid mode selected but embedder is None. Falling back to BM25 only."
@@ -430,12 +441,20 @@ class ClinicalTrialSearch:
             other_conditions,
             search_mode=mode,
         )
-        response = self.es_client.search(
-            index=self.index_name, body={"size": size, "query": query}
-        )
-        hits = response["hits"]["hits"]
-        trials = [hit["_source"] for hit in hits]
-        scores = [hit["_score"] for hit in hits]
+        try:
+            response = with_retries(
+                lambda: self.es_client.search(
+                    index=self.index_name, body={"size": size, "query": query}
+                ),
+                logger=logger,
+                action="ES trial search",
+            )
+            hits = response["hits"]["hits"]
+            trials = [hit["_source"] for hit in hits]
+            scores = [hit["_score"] for hit in hits]
+        except Exception:
+            logger.exception("Search failed; returning empty results.")
+            return [], []
         trials_with_scores = sorted(
             zip(trials, scores), key=lambda x: x[1], reverse=True
         )
@@ -445,3 +464,7 @@ class ClinicalTrialSearch:
             f"[{mode}] Found {len(trials)} trials matching the search criteria."
         )
         return trials, scores
+
+
+def _clean_terms(terms: List[str]) -> List[str]:
+    return [term.strip() for term in terms if term and term.strip()]

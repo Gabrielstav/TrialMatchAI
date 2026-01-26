@@ -40,14 +40,23 @@
   "elasticsearch": {
     "host": "https://localhost:9200",
     "username": "elastic",
-    "password": "QQ7wWoB_WnKe*L*X9tAW",
+    "password": "CHANGE_ME",
     "request_timeout": 600,
     "retry_on_timeout": true,
     "index_trials": "clinical_trials",
-    "index_trials_eligibility": "eligibility_criteria"
+    "index_trials_eligibility": "eligibility_criteria",
+    "auto_start": true,
+    "start_script": "elasticsearch/apptainer-run-es.sh",
+    "start_timeout": 600
   },
   "embedder": {
-    "model_name": "BAAI/bge-m3"
+    "model_name": "BAAI/bge-m3",
+    "pooling": "mean",
+    "max_length": 512,
+    "batch_size": 32,
+    "use_gpu": true,
+    "use_fp16": false,
+    "normalize": true
   },
   "cot": {
     "batch_size": 10

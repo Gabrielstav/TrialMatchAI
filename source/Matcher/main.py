@@ -1,40 +1,42 @@
 from __future__ import annotations
 
-import os
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 import torch
 from Parser.biomedner_engine import BioMedNER
 
 from elasticsearch import Elasticsearch
 
-from .config.config_loader import load_config
-from .models.embedding.query_embedder import QueryEmbedder
-from .models.embedding.sentence_embedder import SecondLevelSentenceEmbedder
-from .models.llm.llm_loader import load_model_and_tokenizer
-from .models.llm.llm_reranker import LLMReranker
-from .models.llm.vllm_loader import load_vllm_engine
-from .pipeline.cot_reasoning import BatchTrialProcessor
-from .pipeline.cot_reasoning_vllm import BatchTrialProcessorVLLM
-from .pipeline.phenopacket_processor import process_phenopacket
-from .pipeline.trial_ranker import (
+from Matcher.config.config_loader import load_config
+from Matcher.models.embedding.text_embedder import TextEmbedder, TextEmbedderConfig
+from Matcher.models.llm.llm_loader import load_model_and_tokenizer
+from Matcher.models.llm.llm_reranker import LLMReranker
+from Matcher.models.llm.vllm_loader import load_vllm_engine
+from Matcher.pipeline.cot_reasoning import BatchTrialProcessor
+from Matcher.pipeline.cot_reasoning_vllm import BatchTrialProcessorVLLM
+from Matcher.pipeline.phenopacket_processor import process_phenopacket
+from Matcher.pipeline.trial_ranker import (
     load_trial_data,
     rank_trials,
     save_ranked_trials,
 )
-from .pipeline.trial_search.first_level_search import ClinicalTrialSearch
-from .pipeline.trial_search.second_level_search import SecondStageRetriever
-from .services.biomedner_service import initialize_biomedner_services
-from .utils.file_utils import (
+from Matcher.pipeline.trial_search.first_level_search import ClinicalTrialSearch
+from Matcher.pipeline.trial_search.second_level_search import SecondStageRetriever
+from Matcher.services.biomedner_service import initialize_biomedner_services
+from Matcher.services.elasticsearch_service import ensure_elasticsearch
+from Matcher.utils.file_utils import (
     create_directory,
     read_json_file,
     read_text_file,
     write_json_file,
     write_text_file,
 )
-from .utils.logging_config import setup_logging
+from Matcher.schemas.phenopacket import Keywords, Phenopacket
+from Matcher.utils.logging_config import reset_request_id, set_request_id, setup_logging
+from Matcher.utils.timing import log_timing
 
-logger = setup_logging()
+logger = setup_logging(__name__)
 
 
 def run_first_level_search(
@@ -42,10 +44,10 @@ def run_first_level_search(
     output_folder: str,
     patient_info: Dict,
     bio_med_ner,
-    embedder: QueryEmbedder,
+    embedder: TextEmbedder,
     config: Dict,
     es_client: Elasticsearch,
-) -> Optional[tuple]:
+) -> Optional[Tuple]:
     main_conditions = keywords.get("main_conditions", [])
     other_conditions = keywords.get("other_conditions", [])
     expanded_sentences = keywords.get("expanded_sentences", [])
@@ -108,7 +110,7 @@ def run_second_level_search(
     gemma_retriever: SecondStageRetriever,
     first_level_scores: Dict,
     config: Dict,
-) -> tuple:
+) -> Tuple:
     queries = list(set(main_conditions + other_conditions + expanded_sentences))[:10]
     logger.info(f"Running second-level retrieval with {len(queries)} queries ...")
 
@@ -215,7 +217,8 @@ def run_rag_processing(
 def main_pipeline():
     logger.info("Starting TrialMatchAI pipeline...")
     config = load_config()
-    create_directory(config["paths"]["output_dir"])
+    paths = config["paths"]
+    create_directory(paths["output_dir"])
 
     if torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
@@ -243,9 +246,17 @@ def main_pipeline():
         model = model.half()  # type: ignore
 
     # Initialize components
-    first_level_embedder = QueryEmbedder(model_name=config["embedder"]["model_name"])
-    second_level_embedder = SecondLevelSentenceEmbedder(
-        model_name=config["embedder"]["model_name"]
+    embedder_cfg = config.get("embedder", {})
+    embedder = TextEmbedder(
+        TextEmbedderConfig(
+            model_name=embedder_cfg.get("model_name", "BAAI/bge-m3"),
+            pooling=embedder_cfg.get("pooling", "mean"),
+            max_length=embedder_cfg.get("max_length", 512),
+            batch_size=embedder_cfg.get("batch_size", 32),
+            use_gpu=embedder_cfg.get("use_gpu", True),
+            use_fp16=embedder_cfg.get("use_fp16", False),
+            normalize=embedder_cfg.get("normalize", True),
+        )
     )
     bio_med_ner = BioMedNER(**config["bio_med_ner"])
 
@@ -262,7 +273,7 @@ def main_pipeline():
 
     es_client = Elasticsearch(
         hosts=[config["elasticsearch"]["host"]],
-        ca_certs=config["paths"]["docker_certs"],
+        ca_certs=paths["docker_certs"],
         basic_auth=(
             config["elasticsearch"]["username"],
             config["elasticsearch"]["password"],
@@ -270,87 +281,114 @@ def main_pipeline():
         request_timeout=config["elasticsearch"]["request_timeout"],
         retry_on_timeout=config["elasticsearch"]["retry_on_timeout"],
     )
+    if not ensure_elasticsearch(es_client, config):
+        return
 
     gemma_retriever = SecondStageRetriever(
         es_client=es_client,
         llm_reranker=llm_reranker,
-        embedder=second_level_embedder,
+        embedder=embedder,
         index_name=config["elasticsearch"]["index_trials_eligibility"],
         bio_med_ner=bio_med_ner,
     )
 
     # Process phenopackets
-    patient_folder = config["paths"]["patients_dir"]
-    phenopacket_files = [f for f in os.listdir(patient_folder) if f.endswith(".json")]
+    patient_folder = Path(paths["patients_dir"])
+    if not patient_folder.exists():
+        logger.error("Patients folder not found: %s", patient_folder)
+        return
+    phenopacket_files = sorted(
+        [p for p in patient_folder.iterdir() if p.suffix == ".json"]
+    )
+    if not phenopacket_files:
+        logger.warning("No patient files found in %s", patient_folder)
+        return
 
-    for phenopacket_file in phenopacket_files:
-        patient_id = phenopacket_file.split(".")[0]
-        output_folder = f"{config['paths']['output_dir']}/{patient_id}"
-        create_directory(output_folder)
+    for phenopacket_path in phenopacket_files:
+        patient_id = phenopacket_path.stem
+        token = set_request_id(patient_id)
+        output_folder = Path(paths["output_dir"]) / patient_id
+        create_directory(str(output_folder))
 
-        input_file = f"{patient_folder}/{phenopacket_file}"
-        output_file = f"{output_folder}/keywords.json"
+        input_file = str(phenopacket_path)
+        output_file = str(output_folder / "keywords.json")
 
-        with torch.no_grad():
-            process_phenopacket(
-                input_file, output_file, model=model, tokenizer=tokenizer
+        try:
+            with log_timing(logger, "Phenopacket processing"):
+                with torch.no_grad():
+                    process_phenopacket(
+                        input_file, output_file, model=model, tokenizer=tokenizer
+                    )
+
+            keywords = Keywords.model_validate(read_json_file(output_file)).model_dump()
+            patient_info = Phenopacket.model_validate(
+                read_json_file(input_file)
+            ).model_dump()
+            patient_info["split_raw_description"] = keywords.get(
+                "expanded_sentences", []
             )
 
-        keywords = read_json_file(output_file)
-        patient_info = read_json_file(input_file)
-        patient_info["split_raw_description"] = keywords.get("expanded_sentences", [])
+            # Run pipeline
+            with log_timing(logger, "First-level search"):
+                with torch.no_grad():
+                    result = run_first_level_search(
+                        keywords,
+                        str(output_folder),
+                        patient_info,
+                        bio_med_ner,
+                        embedder,
+                        config,
+                        es_client,
+                    )
+            if not result:
+                logger.error("First-level search failed for %s", patient_id)
+                continue
 
-        # Run pipeline
-        with torch.no_grad():
-            result = run_first_level_search(
-                keywords,
-                output_folder,
-                patient_info,
-                bio_med_ner,
-                first_level_embedder,
-                config,
-                es_client,
-            )
-        if not result:
-            logger.error(f"First-level search failed for {patient_id}")
-            continue
-
-        (
-            nct_ids,
-            main_conditions,
-            other_conditions,
-            expanded_sentences,
-            first_level_scores,
-        ) = result
-
-        with torch.no_grad():
-            _, top_trials_path = run_second_level_search(
-                output_folder,
+            (
                 nct_ids,
                 main_conditions,
                 other_conditions,
                 expanded_sentences,
-                gemma_retriever,
                 first_level_scores,
-                config,
-            )
+            ) = result
 
-        with torch.no_grad():
-            run_rag_processing(
-                output_folder,
-                top_trials_path,
-                patient_info,
-                model,
-                tokenizer,
-                config,
-            )
+            with log_timing(logger, "Second-level search"):
+                with torch.no_grad():
+                    _, top_trials_path = run_second_level_search(
+                        str(output_folder),
+                        nct_ids,
+                        main_conditions,
+                        other_conditions,
+                        expanded_sentences,
+                        gemma_retriever,
+                        first_level_scores,
+                        config,
+                    )
 
-        # Final ranking
-        trial_data = load_trial_data(output_folder)
-        ranked_trials = rank_trials(trial_data)
-        save_ranked_trials(ranked_trials, f"{output_folder}/ranked_trials.json")
+            with log_timing(logger, "RAG processing"):
+                with torch.no_grad():
+                    run_rag_processing(
+                        str(output_folder),
+                        top_trials_path,
+                        patient_info,
+                        model,
+                        tokenizer,
+                        config,
+                    )
 
-        logger.info(f"Pipeline completed for patient {patient_id}")
+            with log_timing(logger, "Final ranking"):
+                trial_data = load_trial_data(str(output_folder))
+                ranked_trials = rank_trials(trial_data)
+                save_ranked_trials(
+                    ranked_trials, str(output_folder / "ranked_trials.json")
+                )
+
+            logger.info("Pipeline completed for patient %s", patient_id)
+        except Exception:
+            logger.exception("Pipeline failed for patient %s", patient_id)
+            continue
+        finally:
+            reset_request_id(token)
 
 
 if __name__ == "__main__":
