@@ -1,5 +1,6 @@
 {
   "bio_med_ner": {
+    "enabled": true,
     "biomedner_port": 18894,
     "gner_port": 18783,
     "gene_norm_port": 18888,
@@ -9,7 +10,7 @@
     "no_cuda": false
   },
   "services": {
-    "stop_script": "biomedner_services/run_biomedner.sh",
+    "stop_script": "biomedner_services/stop_biomedner.sh",
     "run_script": "biomedner_services/run_biomedner.sh"
   },
   "paths": {
@@ -67,14 +68,19 @@
     "max_trials_rag": 20
   },
   "vllm": {
+    "dtype": "float16",
+    "quantization": "bitsandbytes",
+    "enforce_eager": true,
+    "gpu_memory_utilization": 0.45,
+    "max_model_len": 4096,
+    "max_num_seqs": 8,
+    "max_num_batched_tokens": 4096,
     "batch_size": 100,
     "max_new_tokens": 5000,
     "temperature": 0.0,
     "top_p": 1.0,
     "seed": 1234,
     "length_bucket": true,
-    "gpu_memory_utilization": 0.5,
-    "max_model_len": 8192,
     "tensor_parallel_size": 1
   }
 }

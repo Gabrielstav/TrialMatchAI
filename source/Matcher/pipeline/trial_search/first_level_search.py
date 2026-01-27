@@ -2,8 +2,8 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
 
 from dateutil import parser as date_parser
-from Matcher.models.embedding.query_embedder import QueryEmbedder
-from Matcher.utils.logging_config import setup_logging
+from ...models.embedding.query_embedder import QueryEmbedder
+from ...utils.logging_config import setup_logging
 
 from elasticsearch import Elasticsearch
 

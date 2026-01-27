@@ -1,16 +1,22 @@
 import os
 from typing import Dict, List
 
-from Matcher.utils.file_utils import read_json_file, write_json_file
-from Matcher.utils.logging_config import setup_logging
+from ..utils.file_utils import read_json_file, write_json_file
+from ..utils.logging_config import setup_logging
 
 logger = setup_logging()
 
 
 def load_trial_data(json_folder: str) -> List[Dict]:
+    """Load trial result JSON files from the output folder.
+
+    Only loads files that start with 'NCT' (trial IDs), skipping
+    other JSON files like keywords.json, rag_output.json, etc.
+    """
     trial_data = []
     for file_name in os.listdir(json_folder):
-        if file_name.endswith(".json"):
+        # Only process trial result files (NCT*.json)
+        if file_name.endswith(".json") and file_name.startswith("NCT"):
             file_path = os.path.join(json_folder, file_name)
             trial_id = os.path.splitext(file_name)[0]
             try:

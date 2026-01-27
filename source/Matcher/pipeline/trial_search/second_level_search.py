@@ -3,10 +3,10 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional
 
-from Matcher.models.embedding.sentence_embedder import SecondLevelSentenceEmbedder
-from Matcher.models.llm.llm_reranker import LLMReranker
-from Matcher.utils.file_utils import write_text_file
-from Matcher.utils.logging_config import setup_logging
+from ...models.embedding.sentence_embedder import SecondLevelSentenceEmbedder
+from ...models.llm.llm_reranker import LLMReranker
+from ...utils.file_utils import write_text_file
+from ...utils.logging_config import setup_logging
 
 from elasticsearch import Elasticsearch
 

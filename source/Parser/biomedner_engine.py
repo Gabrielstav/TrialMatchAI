@@ -88,6 +88,7 @@ class BioMedNER:
         seed=2019,
         use_neural_normalizer=True,
         no_cuda=False,
+        neural_normalizer=None,
     ):
         self.time_format = time_format
         self.max_word_len = max_word_len
@@ -114,6 +115,7 @@ class BioMedNER:
             disease_port=disease_norm_port,
             use_neural_normalizer=use_neural_normalizer,
             no_cuda=no_cuda,
+            neural_normalizer_config=neural_normalizer,
         )
         self.dicts = preloaded_dicts if preloaded_dicts else load_shared_dictionaries()
         self.print_log("BioMedNER LOADED...")

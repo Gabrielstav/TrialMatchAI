@@ -4,8 +4,8 @@ import time
 from typing import Dict, List
 
 import torch
-from Matcher.utils.file_utils import read_json_file, write_json_file, write_text_file
-from Matcher.utils.logging_config import setup_logging
+from ...Matcher.utils.file_utils import read_json_file, write_json_file, write_text_file
+from ...Matcher.utils.logging_config import setup_logging
 from tqdm import tqdm
 
 logger = setup_logging()
@@ -20,6 +20,7 @@ class BatchTrialProcessor:
         batch_size: int = 4,
         use_cot: bool = True,
         max_new_tokens: int = 5000,  # keep long answers
+        supports_system_role: bool = True,
     ):
         """
         Optimized for throughput while preserving long outputs.
@@ -30,12 +31,19 @@ class BatchTrialProcessor:
         - telemetry for tokens/sec and stage timings
         """
         self.device = device
-        self.device_str = f"cuda:{device}"
+        # Handle different device types (cuda:N, mps, cpu)
+        if isinstance(device, int):
+            self.device_str = f"cuda:{device}"
+        elif device in ("mps", "cpu"):
+            self.device_str = device
+        else:
+            self.device_str = str(device)
         self.batch_size = batch_size
         self.model = model
         self.tokenizer = tokenizer
         self.use_cot = use_cot
         self.max_new_tokens = max_new_tokens
+        self.supports_system_role = supports_system_role
 
         # ---- Inference-time performance knobs (safe if available) ----
         self.model.eval()
@@ -183,14 +191,25 @@ class BatchTrialProcessor:
                 },
             ]
 
+        # Some models (e.g., Gemma) don't support system role - combine into user message
+        if not self.supports_system_role:
+            system_content = chat[0]["content"]
+            user_content = chat[1]["content"]
+            combined_content = f"{system_content}\n\n{user_content}"
+            chat = [{"role": "user", "content": combined_content}]
+
         if hasattr(self.tokenizer, "apply_chat_template"):
             return self.tokenizer.apply_chat_template(
                 chat, tokenize=False, add_generation_prompt=True
             )
         # Fallback: simple concatenation
-        system_part = f"{chat[0]['content']}\n\n"
-        user_part = f"{chat[1]['content']}\n\n"
-        return system_part + user_part + "Answer: "
+        if len(chat) == 2:
+            system_part = f"{chat[0]['content']}\n\n"
+            user_part = f"{chat[1]['content']}\n\n"
+            return system_part + user_part + "Answer: "
+        else:
+            # Combined message (no system role)
+            return f"{chat[0]['content']}\n\nAnswer: "
 
     # ---------------------- Core batch path ----------------------
 
@@ -216,11 +235,19 @@ class BatchTrialProcessor:
             use_autocast = model_dtype in (torch.float16, torch.bfloat16)
 
             with torch.inference_mode():
-                ctx = (
-                    torch.autocast(device_type="cuda", dtype=model_dtype)
-                    if use_autocast
-                    else torch.cuda.amp.autocast(enabled=False)
-                )
+                # Determine device type for autocast
+                if self.device_str.startswith("cuda"):
+                    device_type = "cuda"
+                elif self.device_str == "mps":
+                    device_type = "mps"
+                else:
+                    device_type = "cpu"
+
+                # MPS and CPU don't support autocast the same way as CUDA
+                if use_autocast and device_type == "cuda":
+                    ctx = torch.autocast(device_type="cuda", dtype=model_dtype)
+                else:
+                    ctx = torch.inference_mode()  # Already in inference mode, just a passthrough
                 with ctx:
                     outputs = self.model.generate(
                         **tokenized,

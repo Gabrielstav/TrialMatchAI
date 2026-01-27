@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from typing import Optional, Tuple
 
-from Matcher.utils.logging_config import setup_logging
+from ....Matcher.utils.logging_config import setup_logging
 
 logger = setup_logging()
 
@@ -96,13 +96,34 @@ def load_vllm_engine(
     # Sanitize core engine options
     dtype = _as_str(vllm_cfg.get("dtype", "bfloat16"), "dtype") or "bfloat16"
     tp = _as_int(vllm_cfg.get("tensor_parallel_size", 1), "tensor_parallel_size") or 1
-    gmu = (
-        _as_float(
-            vllm_cfg.get("gpu_memory_utilization", 0.95), "gpu_memory_utilization"
-        )
-        or 0.95
-    )
+
+    # Handle gpu_memory_utilization with "auto" support
+    gmu_raw = vllm_cfg.get("gpu_memory_utilization", 0.95)
+    if isinstance(gmu_raw, str) and gmu_raw.lower() == "auto":
+        # Auto-calculate based on free GPU memory
+        import torch
+
+        if torch.cuda.is_available():
+            free, total = torch.cuda.mem_get_info()
+            # Use free memory ratio minus 5% headroom, clamped to [0.1, 0.90]
+            gmu = max(0.1, min(0.90, (free / total) - 0.05))
+            logger.info(
+                f"[vLLM] Auto gpu_memory_utilization: {gmu:.2f} "
+                f"(free={free / 2**30:.2f}GB, total={total / 2**30:.2f}GB)"
+            )
+        else:
+            gmu = 0.90
+            logger.warning("[vLLM] CUDA not available, using default gmu=0.90")
+    else:
+        gmu = _as_float(gmu_raw, "gpu_memory_utilization") or 0.95
+
     max_lora_rank = _as_int(vllm_cfg.get("max_lora_rank", 64), "max_lora_rank") or 64
+
+    # Optional V100-friendly settings for KV cache pressure
+    max_num_seqs = _as_int(vllm_cfg.get("max_num_seqs"), "max_num_seqs")
+    max_num_batched_tokens = _as_int(
+        vllm_cfg.get("max_num_batched_tokens"), "max_num_batched_tokens"
+    )
 
     # Optional max_model_len with safe cap based on HF config (unless overridden)
     requested_len = _as_int(vllm_cfg.get("max_model_len", None), "max_model_len")
@@ -116,6 +137,12 @@ def load_vllm_engine(
             )
             requested_len = derived
 
+    # Quantization (e.g., "bitsandbytes" for 4-bit)
+    quant = _as_str(vllm_cfg.get("quantization"), "quantization")
+
+    # Enforce eager mode (avoids CUDA graph compilation OOM)
+    enforce_eager = vllm_cfg.get("enforce_eager", False)
+
     # Build engine kwargs explicitly; never unpack untrusted dicts
     engine_kwargs = dict(
         model=model_path,
@@ -125,16 +152,29 @@ def load_vllm_engine(
         enable_lora=True,  # allows dynamic LoRA loading
         max_lora_rank=max_lora_rank,
     )
+    if quant:
+        engine_kwargs["quantization"] = quant
+    if enforce_eager:
+        engine_kwargs["enforce_eager"] = True
     if requested_len is not None:
         engine_kwargs["max_model_len"] = requested_len
+    if max_num_seqs is not None:
+        engine_kwargs["max_num_seqs"] = max_num_seqs
+    if max_num_batched_tokens is not None:
+        engine_kwargs["max_num_batched_tokens"] = max_num_batched_tokens
+
+    # Log full engine config for debugging (critical for verifying quantization is applied)
+    logger.info("[vLLM] Engine kwargs: %s", engine_kwargs)
 
     logger.info(
-        "[vLLM] Initializing engine: model=%s dtype=%s tp=%s max_len=%s gmu=%.2f",
+        "[vLLM] Initializing engine: model=%s dtype=%s tp=%s max_len=%s gmu=%.2f quant=%s eager=%s",
         model_path,
         dtype,
         tp,
         engine_kwargs.get("max_model_len", "model_default"),
         gmu,
+        quant or "None",
+        enforce_eager,
     )
 
     # Create engine
@@ -228,7 +268,7 @@ def load_vllm_engine(
                             # Try with name instead of ID
                             try:
                                 add_lora(name, adapter_path)
-                            except:  # noqa: E722
+                            except:  # noqa
                                 # Try as kwargs
                                 add_lora(lora_id=adapter_id, lora_path=adapter_path)
                         logger.info("[vLLM] Preloaded LoRA adapter.")

@@ -5,8 +5,8 @@ import os
 import time
 from typing import Dict, List, Optional
 
-from Matcher.utils.file_utils import read_json_file, write_json_file, write_text_file
-from Matcher.utils.logging_config import setup_logging
+from ...Matcher.utils.file_utils import read_json_file, write_json_file, write_text_file
+from ...Matcher.utils.logging_config import setup_logging
 from tqdm import tqdm
 
 from vllm import LLM, SamplingParams

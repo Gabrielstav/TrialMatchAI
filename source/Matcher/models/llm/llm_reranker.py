@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 import torch
 import torch.nn.functional as F
-from Matcher.utils.logging_config import setup_logging
+from ....Matcher.utils.logging_config import setup_logging
 from peft import PeftModel
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -19,7 +19,7 @@ class LLMReranker:
         self,
         model_path: str,
         adapter_path: Optional[str] = None,
-        device: int = 0,
+        device=0,
         torch_dtype=torch.float16,
         batch_size: int = 8,
     ):
@@ -27,8 +27,12 @@ class LLMReranker:
         self.adapter_path = adapter_path
         self.torch_dtype = torch_dtype
         self.batch_size = batch_size
-        # Resolve device string
-        if torch.cuda.is_available():
+
+        # Resolve device string - support CUDA, MPS, or CPU
+        if device == "mps" and torch.backends.mps.is_available():
+            self.device_str = "mps"
+            logger.info("LLMReranker: Using MPS (Apple Silicon) device.")
+        elif torch.cuda.is_available():
             cuda_count = torch.cuda.device_count()
             idx = int(device) if isinstance(device, int) else 0
             if idx < 0 or idx >= cuda_count:
@@ -43,7 +47,7 @@ class LLMReranker:
             except Exception as e:
                 logger.warning(f"Could not set CUDA device to {idx}: {e}")
         else:
-            logger.warning("LLMReranker: CUDA not available; using CPU.")
+            logger.warning("LLMReranker: No GPU available; using CPU.")
             self.device_str = "cpu"
 
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -65,6 +69,9 @@ class LLMReranker:
 
     def load_model(self):
         use_cuda = self.device_str.startswith("cuda")
+        use_mps = self.device_str == "mps"
+
+        # Quantization only on CUDA
         quant_config = (
             BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -75,12 +82,32 @@ class LLMReranker:
             if use_cuda
             else None
         )
+
+        # dtype: float16 for CUDA/MPS, float32 for CPU
+        model_dtype = self.torch_dtype if (use_cuda or use_mps) else torch.float32
+
+        # Determine attention implementation: prefer flash_attention_2, fallback to sdpa
+        attn_impl = None
+        if use_cuda:
+            attn_impl = "sdpa"
+            try:
+                import flash_attn  # noqa
+                device_idx = int(self.device_str.split(":")[-1])
+                major, minor = torch.cuda.get_device_capability(device_idx)
+                if (major * 10 + minor) >= 75:
+                    attn_impl = "flash_attention_2"
+                    logger.info("LLMReranker: Using FlashAttention-2.")
+                else:
+                    logger.info("LLMReranker: GPU does not support FlashAttention-2; using SDPA.")
+            except Exception: # noqa
+                logger.info("LLMReranker: flash-attn not available; using SDPA.")
+
         model = AutoModelForCausalLM.from_pretrained(
             self.model_path,
-            torch_dtype=self.torch_dtype if use_cuda else torch.float32,
+            torch_dtype=model_dtype,
             quantization_config=quant_config,
-            device_map="auto" if use_cuda else None,
-            attn_implementation="flash_attention_2" if use_cuda else None,
+            device_map="auto" if use_cuda else self.device_str,
+            attn_implementation=attn_impl,
             trust_remote_code=True,
         )
         if self.adapter_path:

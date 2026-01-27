@@ -2,7 +2,7 @@ import socket
 import subprocess
 import time
 
-from Matcher.utils.logging_config import setup_logging
+from ..utils.logging_config import setup_logging
 
 logger = setup_logging()
 
@@ -22,6 +22,11 @@ def run_script(script_path: str):
 
 
 def initialize_biomedner_services(config: dict):
+    # Check if NER is enabled
+    if not config.get("bio_med_ner", {}).get("enabled", True):
+        logger.info("BioMedNER is disabled in config. Skipping service initialization.")
+        return
+
     ports_to_check = [
         config["bio_med_ner"]["biomedner_port"],
         config["bio_med_ner"]["gner_port"],

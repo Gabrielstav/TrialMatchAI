@@ -24,11 +24,24 @@ def load_model(device, model_path, adapter_path):
         bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype=torch.float16,
     )
+    # Determine attention implementation: prefer flash_attention_2, fallback to sdpa
+    attn_impl = "sdpa"
+    try:
+        import flash_attn  # noqa
+        major, minor = torch.cuda.get_device_capability(device)
+        if (major * 10 + minor) >= 75:
+            attn_impl = "flash_attention_2"
+            print("Using FlashAttention-2.")
+        else:
+            print("GPU does not support FlashAttention-2; using SDPA.")
+    except Exception: # noqa
+        print("flash-attn not available; using SDPA.")
+
     base_model = AutoModelForCausalLM.from_pretrained(
         model_path,
         torch_dtype=torch.float16,
         device_map=f"cuda:{device}",
-        attn_implementation="flash_attention_2",
+        attn_implementation=attn_impl,
         trust_remote_code=True,
         quantization_config=quant_config,
     )

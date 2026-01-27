@@ -13,13 +13,31 @@ def load_config(path: str) -> dict:
 
 
 def make_es_client(cfg: dict) -> Elasticsearch:
+    """Create ES client with configurable SSL support.
+
+    Set verify_certs: false in config for local Docker ES without SSL.
+    """
     es_conf = cfg["elasticsearch"]
-    return Elasticsearch(
-        hosts=es_conf["hosts"],
-        basic_auth=(es_conf["username"], es_conf["password"]),
-        ca_certs=es_conf["ca_certs"],
-        verify_certs=True,
-    )
+
+    # Get hosts - handle both "host" and "hosts" keys
+    hosts = es_conf.get("hosts") or [es_conf.get("host")]
+    if isinstance(hosts, str):
+        hosts = [hosts]
+
+    kwargs = {
+        "hosts": hosts,
+        "verify_certs": es_conf.get("verify_certs", True),
+    }
+
+    # Add auth if provided
+    if es_conf.get("username") and es_conf.get("password"):
+        kwargs["basic_auth"] = (es_conf["username"], es_conf["password"])
+
+    # Add CA certs if provided and verify_certs is True
+    if kwargs["verify_certs"] and es_conf.get("ca_certs"):
+        kwargs["ca_certs"] = es_conf["ca_certs"]
+
+    return Elasticsearch(**kwargs)
 
 
 def detect_vector_dim(sample: dict) -> int:

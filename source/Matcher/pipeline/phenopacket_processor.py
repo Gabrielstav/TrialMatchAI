@@ -3,9 +3,9 @@ import re
 from typing import Dict, List, Optional
 
 import torch
-from Matcher.utils.file_utils import read_json_file, write_json_file
-from Matcher.utils.logging_config import setup_logging
-from Matcher.utils.temporal_utils import parse_iso_duration, parse_temporal
+from ..utils.file_utils import read_json_file, write_json_file
+from ..utils.logging_config import setup_logging
+from ..utils.temporal_utils import parse_iso_duration, parse_temporal
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 logger = setup_logging()
@@ -236,7 +236,13 @@ class PhenopacketProcessor:
 
 
 class ClinicalSummarizer:
-    def __init__(self, model=None, tokenizer=None, model_name: Optional[str] = None):
+    def __init__(
+        self,
+        model=None,
+        tokenizer=None,
+        model_name: Optional[str] = None,
+        supports_system_role: bool = True,
+    ):
         if model is not None:
             if tokenizer is None:
                 raise ValueError(
@@ -256,6 +262,7 @@ class ClinicalSummarizer:
                 "Must provide either a model instance with its tokenizer or a model_name."
             )
 
+        self.supports_system_role = supports_system_role
         self.model.eval()
 
     def generate_summary(self, sentences: List[str]) -> Dict:
@@ -289,10 +296,17 @@ class ClinicalSummarizer:
         ]
         }
         """
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT.strip()},
-            {"role": "user", "content": " ".join(sentences)},
-        ]
+        user_content = " ".join(sentences)
+
+        # Some models (e.g., Gemma) don't support system role - combine into user message
+        if self.supports_system_role:
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT.strip()},
+                {"role": "user", "content": user_content},
+            ]
+        else:
+            combined_content = f"{SYSTEM_PROMPT.strip()}\n\nPatient Information:\n{user_content}"
+            messages = [{"role": "user", "content": combined_content}]
 
         try:
             prompt = self.tokenizer.apply_chat_template(
@@ -365,14 +379,21 @@ def process_phenopacket(
     model=None,
     tokenizer=None,
     model_name: str = "microsoft/phi-2",
+    supports_system_role: bool = True,
 ) -> bool:
     try:
         processor = PhenopacketProcessor(input_file)
         narrative = processor.generate_medical_narrative()
         summarizer = (
-            ClinicalSummarizer(model=model, tokenizer=tokenizer)
+            ClinicalSummarizer(
+                model=model,
+                tokenizer=tokenizer,
+                supports_system_role=supports_system_role,
+            )
             if model and tokenizer
-            else ClinicalSummarizer(model_name=model_name)
+            else ClinicalSummarizer(
+                model_name=model_name, supports_system_role=supports_system_role
+            )
         )
         summary = summarizer.generate_summary(narrative)
         write_json_file(summary, output_file)

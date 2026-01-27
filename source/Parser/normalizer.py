@@ -17,7 +17,12 @@ time_format = "[%d/%b/%Y %H:%M:%S.%f]"
 
 class Normalizer:
     def __init__(
-        self, use_neural_normalizer, gene_port=18888, disease_port=18892, no_cuda=False
+        self,
+        use_neural_normalizer,
+        gene_port=18888,
+        disease_port=18892,
+        no_cuda=False,
+        neural_normalizer_config=None,
     ):
         self.BASE_DIR = "Parser/resources/normalization/"
         self.NORM_INPUT_DIR = {
@@ -41,13 +46,15 @@ class Normalizer:
             ),
         }
 
-        self.NEURAL_NORM_MODEL_PATH = {
+        # Default HF hub model paths (used if no config provided)
+        default_model_paths = {
             "disease": "dmis-lab/biosyn-sapbert-bc5cdr-disease",
             "sign symptom": "dmis-lab/biosyn-sapbert-bc5cdr-disease",
             "drug": "dmis-lab/biosyn-sapbert-bc5cdr-chemical",
             "gene": "dmis-lab/biosyn-sapbert-bc2gn",
         }
-        self.NEURAL_NORM_CACHE_PATH = {
+        # Default cache paths (relative to BASE_DIR)
+        default_cache_paths = {
             "disease": os.path.join(
                 self.BASE_DIR,
                 "normalizers/neural_norm_caches/dict_Disease_20210630.txt.pk",
@@ -64,6 +71,30 @@ class Normalizer:
                 self.BASE_DIR, "normalizers/neural_norm_caches/dict_Gene.txt.pk"
             ),
         }
+
+        # Override with config values if provided
+        if neural_normalizer_config:
+            models_cfg = neural_normalizer_config.get("models", {})
+            caches_cfg = neural_normalizer_config.get("caches", {})
+            self.NEURAL_NORM_MODEL_PATH = {
+                "disease": models_cfg.get("disease", default_model_paths["disease"]),
+                "sign symptom": models_cfg.get(
+                    "disease", default_model_paths["sign symptom"]
+                ),
+                "drug": models_cfg.get("drug", default_model_paths["drug"]),
+                "gene": models_cfg.get("gene", default_model_paths["gene"]),
+            }
+            self.NEURAL_NORM_CACHE_PATH = {
+                "disease": caches_cfg.get("disease", default_cache_paths["disease"]),
+                "sign symptom": caches_cfg.get(
+                    "disease", default_cache_paths["sign symptom"]
+                ),
+                "drug": caches_cfg.get("drug", default_cache_paths["drug"]),
+                "gene": caches_cfg.get("gene", default_cache_paths["gene"]),
+            }
+        else:
+            self.NEURAL_NORM_MODEL_PATH = default_model_paths
+            self.NEURAL_NORM_CACHE_PATH = default_cache_paths
 
         self.NORM_MODEL_VERSION = "N/A"
         self.HOST = "127.0.0.1"

@@ -22,6 +22,19 @@ def get_model(model_args, training_args):
         bnb_4bit_compute_dtype="float16",
     )
 
+    # Determine attention implementation: prefer flash_attention_2, fallback to sdpa
+    attn_impl = "sdpa"
+    try:
+        import flash_attn  # noqa: F401
+        major, minor = torch.cuda.get_device_capability(0)
+        if (major * 10 + minor) >= 75:
+            attn_impl = "flash_attention_2"
+            print("Using FlashAttention-2.")
+        else:
+            print("GPU does not support FlashAttention-2; using SDPA.")
+    except Exception:
+        print("flash-attn not available; using SDPA.")
+
     model = AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         torch_dtype=torch.float16 if training_args.fp16 else torch.bfloat16,
@@ -29,7 +42,7 @@ def get_model(model_args, training_args):
         cache_dir=model_args.cache_dir,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         trust_remote_code=True,
-        attn_implementation="flash_attention_2",
+        attn_implementation=attn_impl,
         quantization_config=quantization_config,
     )
 
