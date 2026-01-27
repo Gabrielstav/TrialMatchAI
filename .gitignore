@@ -42,7 +42,11 @@ source/Parser/resources/
 source/Parser/models/
 source/Parser/input/
 source/Parser/output/
-Parser/logs/
+source/Parser/logs/
+source/Parser/logs
+source/Parser/resources
+
+
 
 # ============================
 # Python cache
@@ -76,6 +80,11 @@ local_test/processed_ids.txt
 # ============================
 # VM deployment - ignore large/local files
 # ============================
-vm-deployment/
+vm-deployment/models
+vm-deployment/apptainer
+vm-deployment/docs
+vm-deployment/data
+vm-deployment/test_data
+vm-deployment/download.log
 local_test/README.md
 current_issue.txt
