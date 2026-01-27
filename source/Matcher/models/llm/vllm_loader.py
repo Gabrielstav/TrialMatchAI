@@ -97,15 +97,15 @@ def load_vllm_engine(
     dtype = _as_str(vllm_cfg.get("dtype", "bfloat16"), "dtype") or "bfloat16"
     tp = _as_int(vllm_cfg.get("tensor_parallel_size", 1), "tensor_parallel_size") or 1
 
-    # Handle gpu_memory_utilization with "auto" support
+    # handle gpu_memory_utilization with "auto" support
     gmu_raw = vllm_cfg.get("gpu_memory_utilization", 0.95)
     if isinstance(gmu_raw, str) and gmu_raw.lower() == "auto":
-        # Auto-calculate based on free GPU memory
+        # auto-calculate based on free GPU memory
         import torch
 
         if torch.cuda.is_available():
             free, total = torch.cuda.mem_get_info()
-            # Use free memory ratio minus 5% headroom, clamped to [0.1, 0.90]
+            # free memory ratio minus 5% headroom, clamped to [0.1, 0.90]
             gmu = max(0.1, min(0.90, (free / total) - 0.05))
             logger.info(
                 f"[vLLM] Auto gpu_memory_utilization: {gmu:.2f} "
@@ -119,7 +119,7 @@ def load_vllm_engine(
 
     max_lora_rank = _as_int(vllm_cfg.get("max_lora_rank", 64), "max_lora_rank") or 64
 
-    # Optional V100-friendly settings for KV cache pressure
+    # optional V100 settings for KV cache pressure
     max_num_seqs = _as_int(vllm_cfg.get("max_num_seqs"), "max_num_seqs")
     max_num_batched_tokens = _as_int(
         vllm_cfg.get("max_num_batched_tokens"), "max_num_batched_tokens"
@@ -163,7 +163,7 @@ def load_vllm_engine(
     if max_num_batched_tokens is not None:
         engine_kwargs["max_num_batched_tokens"] = max_num_batched_tokens
 
-    # Log full engine config for debugging (critical for verifying quantization is applied)
+    # check set quantization matches config
     logger.info("[vLLM] Engine kwargs: %s", engine_kwargs)
 
     logger.info(

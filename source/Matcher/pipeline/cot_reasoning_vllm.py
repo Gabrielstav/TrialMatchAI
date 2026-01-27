@@ -14,8 +14,8 @@ from vllm import LLM, SamplingParams
 try:
     # Present in vLLM when LoRA is enabled
     from vllm.lora.request import LoRARequest  # type: ignore
-except Exception:  # pragma: no cover
-    LoRARequest = None  # type: ignore
+except Exception:  # noqa
+    LoRARequest = None
 
 logger = setup_logging()
 
