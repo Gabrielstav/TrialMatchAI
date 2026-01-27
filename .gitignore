@@ -77,10 +77,6 @@ local_test/processed_ids.txt
 # ============================
 # VM deployment - ignore large/local files
 # ============================
-vm-deployment/snapshots/
-vm-deployment/models/
-vm-deployment/data/
-vm-deployment/*.log
-vm-deployment/processed_ids.txt
-vm-deployment/docs/todo.todo
-vm-deployment/docs/hpc_docs.txt
+vm-deployment/
+local_test/README.md
+current_issue.txt
