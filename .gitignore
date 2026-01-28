@@ -74,8 +74,9 @@ processed_ids.txt
 # ============================
 # Local testing - ignore results and state
 # ============================
-local_test/results/
+local_test/results
 local_test/processed_ids.txt
+local_test/docker/snapshots/
 
 # ============================
 # VM deployment - ignore large/local files
@@ -88,3 +89,5 @@ vm-deployment/test_data
 vm-deployment/download.log
 local_test/README.md
 current_issue.txt
+
+snapshot-builder/.processed_ids.txt
