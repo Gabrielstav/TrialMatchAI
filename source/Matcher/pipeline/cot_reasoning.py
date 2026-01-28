@@ -227,6 +227,13 @@ class BatchTrialProcessor:
                 return_tensors="pt",
             )
             input_len = tokenized["input_ids"].shape[1]
+
+            # Explicitly create attention_mask if not present (avoids warning when pad_token == eos_token)
+            if "attention_mask" not in tokenized:
+                tokenized["attention_mask"] = (
+                    tokenized["input_ids"] != self.tokenizer.pad_token_id
+                ).long()
+
             tokenized = tokenized.to(self.device_str)
             t1 = time.time()
 

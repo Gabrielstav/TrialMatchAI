@@ -316,9 +316,14 @@ class ClinicalSummarizer:
                 return_tensors="pt",
             ).to(self.model.device)
 
+            # Create attention mask (1 for real tokens, 0 for padding)
+            # This avoids the warning when pad_token == eos_token
+            attention_mask = (prompt != self.tokenizer.pad_token_id).long()
+
             with torch.no_grad():
                 output_ids = self.model.generate(
                     prompt,
+                    attention_mask=attention_mask,
                     max_new_tokens=2048,
                     do_sample=False,
                     return_dict_in_generate=False,
