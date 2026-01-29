@@ -1,0 +1,95 @@
+PYTORCH_ALLOC_CONF=expandable_segments:True
++ apptainer run --nv --env CUDA_VISIBLE_DEVICES=0 --env TRIALMATCHAI_CONFIG=/app/source/Matcher/config/config.json --bind /tsd/p1753/cluster/trialmatch_ai/models:/mnt/models:ro --bind /tsd/p1753/cluster/trialmatch_ai/test_data:/mnt/data:ro --bind /tsd/p1753/cluster/trialmatch_ai/trials/processed_trials:/mnt/data/trials_jsons:ro --bind /tsd/p1753/cluster/trialmatch_ai/results:/mnt/results --bind /tsd/p1753/cluster/trialmatch_ai/cache:/mnt/cache --bind /tsd/p1753/cluster/trialmatch_ai/config/config.hpc.json:/app/source/Matcher/config/config.json:ro /tsd/p1753/cluster/trialmatch_ai/apptainer/trialmatchai.sif
+/opt/venv/lib/python3.11/site-packages/transformers/utils/hub.py:110: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading checkpoint shards: 100%|██████████| 6/6 [00:33<00:00,  5.53s/it]
+Loading checkpoint shards: 100%|██████████| 2/2 [00:05<00:00,  2.67s/it]
+The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
+Processing batches: 100%|██████████| 81/81 [00:25<00:00,  3.14it/s]
+/opt/venv/lib/python3.11/site-packages/torch/__init__.py:1136: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  return isinstance(obj, torch.Tensor)
+/opt/venv/lib/python3.11/site-packages/torch/__init__.py:1136: FutureWarning: `torch.distributed.reduce_op` is deprecated, please use `torch.distributed.ReduceOp` instead
+  return isinstance(obj, torch.Tensor)
+/opt/venv/lib/python3.11/site-packages/transformers/utils/hub.py:110: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+(EngineCore_DP0 pid=1614358) /opt/venv/lib/python3.11/site-packages/tvm_ffi/_optional_torch_c_dlpack.py:174: UserWarning: Failed to JIT torch c dlpack extension, EnvTensorAllocator will not be enabled.
+(EngineCore_DP0 pid=1614358) We recommend installing via `pip install torch-c-dlpack-ext`
+(EngineCore_DP0 pid=1614358)   warnings.warn(
+Loading safetensors checkpoint shards:   0% Completed | 0/6 [00:00<?, ?it/s]
+Loading safetensors checkpoint shards:  17% Completed | 1/6 [00:02<00:11,  2.33s/it]
+Loading safetensors checkpoint shards:  33% Completed | 2/6 [00:04<00:09,  2.44s/it]
+Loading safetensors checkpoint shards:  50% Completed | 3/6 [00:07<00:07,  2.53s/it]
+Loading safetensors checkpoint shards:  67% Completed | 4/6 [00:10<00:05,  2.54s/it]
+Loading safetensors checkpoint shards:  83% Completed | 5/6 [00:12<00:02,  2.58s/it]
+Loading safetensors checkpoint shards: 100% Completed | 6/6 [00:15<00:00,  2.59s/it]
+Loading safetensors checkpoint shards: 100% Completed | 6/6 [00:15<00:00,  2.55s/it]
+(EngineCore_DP0 pid=1614358)
+Adding requests: 100%|██████████| 6/6 [00:00<00:00, 187.61it/s]
+Adding requests:   0%|          | 0/6 [00:00<?, ?it/s]                                                      !!!!!!! Segfault encountered !!!!!!!
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault, est. speed input: 0.00 toks/s, output: 0.00 toks/s]
+  File "<unknown>", line 0, in _PyFunction_Vectorcall
+  File "<unknown>", line 0, in _PyObject_FastCallDictTstate
+  File "<unknown>", line 0, in _PyObject_MakeTpCall
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in PyObject_Call
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in _PyFunction_Vectorcall
+  File "<unknown>", line 0, in PyObject_Call
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in _PyFunction_Vectorcall
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in _PyFunction_Vectorcall
+  File "<unknown>", line 0, in pybind11::object pybind11::detail::object_api<pybind11::handle>::operator()<(pybind11::return_value_policy)1, pybind11::detail::args_proxy, pybind11::detail::kwargs_proxy>(pybind11::detail::args_proxy&&, pybind11::detail::kwargs_proxy&&) const
+  File "<unknown>", line 0, in torch::impl::dispatch::PythonKernelHolder::operator()(c10::OperatorHandle const&, c10::DispatchKeySet, std::vector<c10::IValue, std::allocator<c10::IValue> >*)
+  File "<unknown>", line 0, in c10::Dispatcher::callBoxed(c10::OperatorHandle const&, std::vector<c10::IValue, std::allocator<c10::IValue> >*) const [clone .isra.0]
+  File "<unknown>", line 0, in torch::jit::invokeOperatorFromPython(c10::ArrayRef<std::shared_ptr<torch::jit::Operator> >, pybind11::args const&, pybind11::kwargs const&, std::optional<c10::DispatchKey>)
+  File "<unknown>", line 0, in torch::jit::_get_operation_for_overload_or_packet(c10::ArrayRef<std::shared_ptr<torch::jit::Operator> >, c10::Symbol, pybind11::args const&, pybind11::kwargs const&, bool, std::optional<c10::DispatchKey>)
+  File "<unknown>", line 0, in torch::jit::_get_operation_for_overload_or_packet(std::vector<std::shared_ptr<torch::jit::Operator>, std::allocator<std::shared_ptr<torch::jit::Operator> > > const&, c10::Symbol, pybind11::args const&, pybind11::kwargs const&, bool, std::optional<c10::DispatchKey>)
+  File "<unknown>", line 0, in pybind11::cpp_function::initialize<torch::jit::initJITBindings(_object*)::{lambda(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)#2}::operator()(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) const::{lambda(pybind11::args const&, pybind11::kwargs const&)#1}, pybind11::object, pybind11::args const&, pybind11::kwargs const&, pybind11::name, pybind11::doc>(torch::jit::initJITBindings(_object*)::{lambda(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)#2}::operator()(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) const::{lambda(pybind11::args const&, pybind11::kwargs const&)#1}&&, pybind11::object (*)(pybind11::args const&, pybind11::kwargs const&), pybind11::name const&, pybind11::doc const&)::{lambda(pybind11::detail::function_call&)#1}::_FUN(pybind11::detail::function_call&)
+  File "<unknown>", line 0, in pybind11::cpp_function::dispatcher(_object*, _object*, _object*)
+  File "<unknown>", line 0, in PyObject_Call
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in _PyFunction_Vectorcall
+  File "<unknown>", line 0, in _PyObject_FastCallDictTstate
+  File "<unknown>", line 0, in _PyObject_Call_Prepend
+  File "<unknown>", line 0, in PyObject_Call
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in _PyObject_FastCallDictTstate
+  File "<unknown>", line 0, in _PyObject_Call_Prepend
+  File "<unknown>", line 0, in _PyObject_MakeTpCall
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in _PyObject_FastCallDictTstate
+  File "<unknown>", line 0, in _PyObject_Call_Prepend
+  File "<unknown>", line 0, in _PyObject_MakeTpCall
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in PyObject_Call
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in PyObject_Call
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in _PyFunction_Vectorcall
+  File "<unknown>", line 0, in _PyObject_FastCallDictTstate
+  File "<unknown>", line 0, in _PyObject_Call_Prepend
+  File "<unknown>", line 0, in PyObject_Call
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in PyObject_Call
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in _PyFunction_Vectorcall
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in _PyFunction_Vectorcall
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in _PyFunction_Vectorcall
+  File "<unknown>", line 0, in PyObject_Call
+  File "<unknown>", line 0, in _PyEval_EvalFrameDefault
+  File "<unknown>", line 0, in PyEval_EvalCode
+  File "<unknown>", line 0, in PyRun_StringFlags
+  File "<unknown>", line 0, in PyRun_SimpleStringFlags
+  File "<unknown>", line 0, in Py_RunMain
+  File "<unknown>", line 0, in Py_BytesMain
+  File "<unknown>", line 0, in _start
+  File "<unknown>", line 0, in 0xffffffffffffffff
+

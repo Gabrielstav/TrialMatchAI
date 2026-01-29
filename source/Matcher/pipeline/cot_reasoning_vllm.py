@@ -12,7 +12,7 @@ from tqdm import tqdm
 from vllm import LLM, SamplingParams
 
 try:
-    # Present in vLLM when LoRA is enabled
+    # present in vLLM when LoRA is enabled
     from vllm.lora.request import LoRARequest  # type: ignore
 except Exception:  # noqa
     LoRARequest = None

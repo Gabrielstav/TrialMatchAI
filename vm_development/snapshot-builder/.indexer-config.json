@@ -1,0 +1,11 @@
+{
+  "elasticsearch": {
+    "hosts": ["http://localhost:9201"],
+    "username": "elastic",
+    "password": "trialmatchai",
+    "verify_certs": false,
+    "request_timeout": 300,
+    "retry_on_timeout": true,
+    "max_retries": 3
+  }
+}

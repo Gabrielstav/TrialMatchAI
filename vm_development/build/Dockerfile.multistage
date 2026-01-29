@@ -1,0 +1,83 @@
+# multi-stage build for minimal TrialMatchAI image
+# stage 1 builds a fully-populated venv,
+# stage 2 copies it into a smaller runtime image
+
+# stage 1: builder - create /opt/venv with deps
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04 AS builder
+ARG PYTHON=python3.11
+
+# system deps needed to create venv + build native wheels
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ${PYTHON} \
+    ${PYTHON}-venv \
+    ${PYTHON}-dev \
+    build-essential \
+    curl \
+    ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+# create venv and put it first on PATH
+RUN ${PYTHON} -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# install uv
+RUN pip install --no-cache-dir uv
+
+# install CUDA-enabled PyTorch first to avoid CPU wheels
+RUN uv pip install --no-cache-dir \
+    torch==2.2.0 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# install project deps and extras from pyproject,
+# hatchling needs README.md for metadata
+WORKDIR /build
+COPY pyproject.toml README.md ./
+RUN uv pip install --no-cache-dir ".[hpc]"
+
+# download nltk data (wordnet for lemmatization)
+RUN python -c "import nltk; nltk.download('wordnet', download_dir='/opt/venv/nltk_data')"
+ENV NLTK_DATA="/opt/venv/nltk_data"
+
+# reduce venv size (keep numpy tests due to scipy/array_api_compat behavior)
+RUN find /opt/venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
+  && find /opt/venv -type d -name "tests" -not -path "*/numpy/*" -exec rm -rf {} + 2>/dev/null || true \
+  && find /opt/venv -type d -name "test"  -not -path "*/numpy/*" -exec rm -rf {} + 2>/dev/null || true \
+  && find /opt/venv -type f -name "*.pyc" -delete 2>/dev/null || true \
+  && find /opt/venv -type f -name "*.pyo" -delete 2>/dev/null || true \
+  && rm -rf /opt/venv/share/doc /opt/venv/share/man
+
+
+# stage 2: runtime - minimal + supports JIT builds
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+ARG PYTHON=python3.11
+
+# runtime Python + libs + toolchain for torch extensions/triton/punica builds
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ${PYTHON}-minimal \
+    ${PYTHON}-venv \
+    libpython3.11-stdlib \
+    libxcb1 \
+    build-essential \
+    ${PYTHON}-dev \
+    ca-certificates \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+
+# cache dirs for JIT/compilation at runtime, bind to a writable filesystem on VM
+ENV XDG_CACHE_HOME=/mnt/cache \
+    HF_HOME=/mnt/cache/huggingface \
+    TRANSFORMERS_CACHE=/mnt/cache/huggingface/transformers \
+    TORCH_HOME=/mnt/cache/torch \
+    TRITON_CACHE_DIR=/mnt/cache/triton \
+    TORCH_EXTENSIONS_DIR=/mnt/cache/torch_extension
+
+# bring in prebuilt venv
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/app" \
+    NLTK_DATA="/opt/venv/nltk_data"
+
+WORKDIR /app
+COPY source /app/source
+COPY utils  /app/utils
+
+CMD ["python", "-m", "source.Matcher.main"]

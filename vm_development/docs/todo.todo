@@ -1,0 +1,201 @@
+todo:
+Punica kernels req for triton/vLLM, wont work on sm70/V100.
+
+This results in a segfault, probably because LoRA adapter uses vLLM which uses triton which uses punica,
+which is not made for V100 (sm70, < 8.0) architecture. so i can either drop vLLM (slow) or merge
+the LoRA adapter with the phi-4 base model, to create a new model, bind that and disable LoRA for HPC in main.
+can do this just on RAM and CPU so it's fine, but need new script in apptainer called by slurm to do this.
+also, need to load model without quantization and verify outputs.
+-- or no just add the new script and expose it as cmd to apptainer, make a separate slurm script to merge (yes),
+meaning no new image to maintain, can later extend to have an apptainer for all models etc to make it nice if needed,
+since just one adapter + wont work, try merging. if not fallback to HF backend.
+
+So we can use the hf backend, setting the CoT_mode to "default" and it works.
+But how? what does it actually do, does it skip the CoT or just do inference differently?
+
+Figure out if I need to merge models, what do I gain with vLLM?
+If I merge, need:
+[ ] tiny sbatch script to run model merge (needs lots of RAM)
+[ ] use torch/transformers? (idk what quantization phi-4 trained with, set to that)
+[ ] and a small mutlistage (?) build script with Dockerfile to run on HPC
+
+
+todo torsdag: parity code
+build:
+
+
+source:
+[ ] clean up source/ changes
+[ ] push to main
+[ ] merge from master fork
+    [ ] review changes to main fork
+    [ ] might need to adapt my code, ensure no merge conflicts
+
+
+todo helga: parity writing
+[ ] make on readme that explains VM setup, all steps, required stuff etc
+[ ] write paper summary
+[ ] write pipeline summary: step by step from completely unprocessed data to results
+    - what is each step doing, what models/methods used, what does data look like at each stage
+[ ] add questions doc, with possible ways to handle these
+
+todo: pipeline fix
+[ ] add model merging script to merge LoRA adapter with base model, to run with vLLM on sm<80
+[ ] add BioMedNER to pipeline, update build and make it work on HPC (check VRAM requirements)
+[ ] add one input layer over other scripts and apptainer, inject all paths, configs, settings etc
+    so no script has IO hardcoded, just one source of truth in one config.
+    also enables running multiple jobs, creating ES logs per run/patient, etc
+
+
+
+todo: fix vm-deployment, add missing scripts, clean up, etc
+[ ] delete old single build unused files in vm-deployment/apptainer:
+    - build.sh
+    - elasticsearch.def
+    - trialmatchai.def
+    Builds are done with build-multistage.sh now, idk if I need the other files.
+    If they are used but only locally, move to local_test/ dir.
+[ ] clean up download data dir script, automatically generate sha256 hash of the dirs
+    - download processed_trials and processed_criteria, or flags for just one of them, and flag for sha256
+    to generate hash of the processed_trials and processed_criteria dirs (just two txt files for each to compare with VM upload)
+[ ] need build snapshot of processed criteria script
+[ ] need zip to sub 10GB dirs (max compression) of the processed criteria and processed trials
+    - document clearly that processed trials should be raw .json as is, processed criteria used to make ES snapshot (index)
+[ ] make output of this process a dir containing files to upload, can then just upload those files to VM as is?
+    - or at least document exactly what the VM setup needs to be (all files needed & dir structure)
+
+todo: write docs once it's in a nice state
+[ ] 1. document VM setup, explain steps linearly (from not having any local data, to running on HPC)
+    - update vm-deployment/README.md
+[ ] 2. write summary of code architecture, overarching steps from start to end, models used, methods used, etc
+    - make new doc in vm-deployment/docs for trialmatch, use source code and paper in docs for reference
+[ ] 3. write "questions/future work/improvements" doc on questions from tick
+    - make new doc in vm-deployment/docs for
+
+
+====== after base case on VM works =======
+todo: make runable with multiple jobs as the same time
+[ ] make pipeline run with parallel jobs, right now it'll fail because all jobs point to same ES dir and bind same ports
+bascially make ES data persistent per-user, logs per-run, and choose unique ports, but check docs for HPC/VM first and plan this a bit
+todo: figure out how to set up snapshot updates, index updates etc
+case is: new data, upload just that to VM, update snapshot with just new data, rebuild indices with just new data on new pipeline run-
+unsure how to do this, curerntly just builds snapshot of entire index locally, and upload that.
+need to figure out later if we want to update with more data etc.
+should maybe do incremental indexing, load only new indices between runs, and manually snapshot when data updates.
+or, maybe make a new snapshot when data updates, detect in pipeline and rebuild indices.
+this ties into the wrapper level and locking as well, should refactor to make one entry point with config over
+the sbatch level, can more easily hande PID, users etc? or do it in sbatch, using pid / jid,
+-- idk need to read up on how this is done
+todo: inconcistency in vm models vs canonical models dir
+root/models has neural_normalizer_model while vm-deployment doesn't, it has neural_norm_caches.
+[ ] so when running on the VM; will I use the caches instead? or should I use the model? Find this in source code and figure out.
+todo: upload full processed criteria to VM
+1. [ ] download processed criteria again from zenodo, zip split with max compression (parts < 10GB).
+2. [ ] upload split zips and concat to one on VM, unpack as raw data
+3. [ ] validate/adapt index script to create index on VM (don't want to deal with local indexing again)
+todo: [ ] automate indexing and handle new criteria
+This should be automated. Already have indexing in Utils, just wrap this and make slurm script to run on HPC.
+What if we get new data and need to upload just the updated data?
+Or we want to rebuild the entire index? First need to download data, split into zip parts under 10GB,
+upload manually, concat zip parts, validate same data is there. But what about for partial updates to the index?
+Then need to rebuild ES snapshots of criteria on VM, and also enable partial indexing of just the new data.
+[ ] todo: for local: fix or enforece valid json, or pre-process?
+[ ] todo: for local: "Asking to truncate to max_length but no maximum length is provided and the model has no predefined maximum length. Default to no truncation."
+[ ] todo: fix plural and singular from config field, correct to match source (don't remember the field was called)
+[ ] todo: integrate NER for query expansion into VM deployment
+[ ] todo: So similarity is calculated at query time from stored vectors, should use HNSW index in the future!
+So both first-level and second-level searches use script_score with cosineSimilarity().
+This function computes similarity at query time from stored vectors - it doesn't use the HNSW index even if index: true is set.
+For script_score queries with cosineSimilarity(), the index: true setting is irrelevant. The search works the same either way.
+So leave this as is, index: true on criteria is an inconsistency I can fix later.
+In canonical source:
+Trials: vectors are stored, *not* indexed.
+Criteria: vectors are stored *and* indexed (but vectors unused?)
+
+todo: completed
+[x] clean up vm-deployment scripts
+[x] make create snapshot as one script, test on local test data
+[x] put this in snapshot inside scripts or just in local
+[x] remove unused files
+[x] bind snapshot resoration script instead of hardcoding in path in sbatch script
+[x] clean up build multistage and docker multistage, remove redundant run, log properly etc
+[x] make subdir "deploy" and put just deplyed files there, keep
+    all tools that produce the artifacts in vm-deployment.
+    or even cleaner, keep extracting until "vm-deployent" == "deploy"
+[x] remove unused files non-code files
+[x] tried adding minimal c toolchain + python binding with dev, works
+[x] rebuild, upload and re-run
+[x] input data
+[x] separated from processed docs/trials
+[x] delete cache?
+[x] verify all paths/sbathc script etc, ensure parity between local/vm sbatch script
+[x] find a way to decrease memory usage
+[x] build from pyproject.toml instead, separate hpc vs local dev, let uv resolve in one step
+[x] fix OOM:
+    [x] actually delete references in call sites
+    [x] fix passthrough of 4bit quantization from hpc config
+    [x] log CUDA tensors after cleanup
+    [x] see if eager mode helps to prevent CUDA graph compilation OOM
+    [x] set CUDA allocator env var in slurm script
+[x] release HF model config before invoking vLLM (if CoT backend=vLLM) to free memory, but make it work with multiple patients
+[x] put hedaless opencv at end and libxcb1 as fallback in case other libs require full opencv
+[x] change to multiprocess spawn isntead of fork in main
+[x] verify processed trial data on VM is there and same as local, unzip, delete local
+[x] delete local processed criteria, got corrupted from dropbox
+[x] move result output dir to local_test
+[x] add incremental indexing to Utils indexer
+[x] verify the output data makes sense from Gemma run
+[x] make little readme in local_test
+[x] separate local scripts, data, setup etc from vm-deployment.
+[x] run-local should just build small snapshot, and restore that, instead of handling the full dataset.
+[x] is test_data/build_index.py doing exaclty the same as index_trials_local and index_criteria_local?
+              yes except for HNSW indexing, removed to use canonical approach
+[x] separate out the vm part of the run-local script: need to build full snapshot from full dataset if dev for VM:
+- this script should download the full datasets
+- check if the data is there, if it is, allow to build full snapshot of the dataset in vm-deployment/snapshots/
+               - check if models are there, if not, download them and put them in vm-deployment/models
+[x] moved test data to /test_data, local scripts to /local_test, need to update scripts to match this
+[x] test scripts are not interesting unless they call the source code, think the test_models_local.py and test_search.py are not valuable
+as they just test the ES instance instead of the actual source code, so they should probably be deleted, since the local testing should call /source.
+ensure indexing works as intended, how is that done in the canonical TrailMatch code (i.e. not for my vm deployment code, but for the original usecase)?
+[x] 2.6.1 need to ensure indexing works as intened, follows the same proceedure as the original source code, etc.
+[x] figure out how to make a subset of dataset that contains matching trials & criteria (and some non-matching trials/criteria).
+it should be small, so it can be packaged with the repo, needs to be well below 1GB in total (trials, criteria, snapshot).
+- made test_data/ with 120 trials and 93 criteria dirs for local testing
+[x] edit the run-local.sh in vm-deployment.sh to run with this subset of the data
+[x] make a local version of the index building script that runs on this small local dataset to build tiny indices for local running
+[x] zip eligibility criteria & move to /data
+[x] upload snapsot of indices
+[x] figure out what to do with with neural normalizer models (just edit config instead of replicating HF indices)
+[x] achieve model parity in models/ dir and upload them to HPC
+[x] zip the subset of the json trials and unzip on vm
+[x] upload patient test data
+[x] finish scripts and make them on HPC
+[x] upload elastic search apptainer
+[x] rebuild trialmatchai apptainer, upload
+[x] fix config loading, just make local configs for now and inject
+[x] fix import paths
+[x] fix /app relative paths
+[x] make local UV env
+[x] use MPS backend if local runs
+[x] fix prompts for non-assistant (local) models
+[x] move partially uploaded docs
+[x] fix dropbox, did it upload everything?
+[x] disable security since it only runs inside slurm job
+    [x] update scripts and config to handle this, without username/password
+    [x] update new scripts and config
+[x] building is slow:
+    [x] check if all deps are used/required?
+    [x] improve trialmatch.def file: use slim images, copy runtime, remove unused packages, compress
+    [x] make it faster using UV over pip
+[x] fix flashattention2, best is to build with it, or use sdpa if that doesn't work.
+[x] how is flashattention2 built into the canonical docker image?
+    - does it even work with Nvidia Tesla V100 GPUs? No...
+      it requires Ampere (sm_80) or newer: use sdpa as fallback for older GPUs
+[x] change source to use sdpa instead (gpu arch agnositc) and is built into pytorch,
+    try flash attention if support, elif cuda and no support use sdpa, else None
+[x] check for remaining package issues, fix before rebuild
+    - missing dateutils
+    - missing NER requirements (spacy, nltk, gliner, bioregistry, rapidfuzz)
+[x] fix ES config to work without secturity
+[x] fix opencb dep issue with directX11, probs not needed. but add dep as headless since we dont have dirx11 in headless apptainer
