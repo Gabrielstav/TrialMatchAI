@@ -81,16 +81,12 @@ local_test/docker/snapshots/
 # ============================
 # VM deployment - ignore large/local files
 # ============================
-vm-deployment/models
-vm-deployment/apptainer
-vm-deployment/docs
-vm-deployment/data
-vm-deployment/test_data
-vm-deployment/download.log
 local_test/README.md
 current_issue.txt
-
+vllm_issue.txt
 snapshot-builder/.processed_ids.txt
 vm_development/deploy/snapshots/
 vm_development/docs/
 vm_development/snapshot-builder/.processed_ids.txt
+vm_development/deploy/models
+vm_development/deploy/apptainer

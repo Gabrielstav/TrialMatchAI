@@ -1,0 +1,102 @@
+{
+  "_comment": "HPC configuration for TrialMatchAI on Colossus cluster",
+  "_usage": "Bind mount this file to /app/source/Matcher/config/config.json in the container",
+
+  "bio_med_ner": {
+    "enabled": false,
+    "biomedner_port": 18894,
+    "gner_port": 18783,
+    "gene_norm_port": 18888,
+    "disease_norm_port": 18892,
+    "biomedner_home": "Parser/",
+    "use_neural_normalizer": true,
+    "no_cuda": false,
+    "neural_normalizer": {
+      "models": {
+        "disease": "/mnt/models/biosyn-sapbert-bc5cdr-disease",
+        "drug": "/mnt/models/biosyn-sapbert-bc5cdr-chemical",
+        "gene": "/mnt/models/biosyn-sapbert-bc2gn"
+      },
+      "caches": {
+        "disease": "/mnt/models/neural_norm_caches/dict_Disease_20210630.txt.pk",
+        "drug": "/mnt/models/neural_norm_caches/dict_ChemicalCompound_20210630.txt.pk",
+        "gene": "/mnt/models/neural_norm_caches/dict_Gene.txt.pk"
+      }
+    }
+  },
+  "services": {
+    "stop_script": "biomedner_services/stop_biomedner.sh",
+    "run_script": "biomedner_services/run_biomedner.sh"
+  },
+  "paths": {
+    "patients_dir": "/mnt/data/patients",
+    "output_dir": "/mnt/results/",
+    "trials_json_folder": "/mnt/data/trials_jsons",
+    "docker_certs": null
+  },
+  "model": {
+    "base_model": "/mnt/models/phi-4",
+    "quantization": {
+      "load_in_4bit": true,
+      "bnb_4bit_use_double_quant": true,
+      "bnb_4bit_quant_type": "nf4",
+      "bnb_4bit_compute_dtype": "float16"
+    },
+    "cot_adapter_path": "/mnt/models/finetuned/finetuned_phi_reasoning",
+    "reranker_model_path": "/mnt/models/gemma-2-2b-it",
+    "reranker_adapter_path": "/mnt/models/finetuned/finetuned_gemma2"
+  },
+  "tokenizer": {
+    "use_fast": true,
+    "padding_side": "left"
+  },
+  "global": {
+    "device": 0
+  },
+  "elasticsearch": {
+    "host": "http://localhost:9200",
+    "username": null,
+    "password": null,
+    "request_timeout": 600,
+    "retry_on_timeout": true,
+    "index_trials": "clinical_trials",
+    "index_trials_eligibility": "eligibility_criteria",
+    "verify_certs": false
+  },
+  "embedder": {
+    "model_name": "/mnt/models/bge-m3"
+  },
+  "cot": {
+    "batch_size": 16
+  },
+  "LLM_reranker": {
+    "batch_size": 32
+  },
+  "search": {
+    "vector_score_threshold": 0.5,
+    "max_trials_first_level": 300,
+    "max_trials_second_level": 100
+  },
+  "use_cot_reasoning": true,
+  "cot_backend": "vllm",
+  "rag": {
+    "batch_size": 8,
+    "max_trials_rag": 10
+  },
+  "vllm": {
+    "dtype": "float16",
+    "quantization": "bitsandbytes",
+    "enforce_eager": true,
+    "gpu_memory_utilization": 0.45,
+    "max_model_len": 4096,
+    "max_num_seqs": 8,
+    "max_num_batched_tokens": 4096,
+    "batch_size": 8,
+    "max_new_tokens": 1024,
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "seed": 1234,
+    "length_bucket": true,
+    "tensor_parallel_size": 1
+  }
+}

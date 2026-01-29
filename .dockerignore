@@ -1,0 +1,41 @@
+# TrialMatchAI Docker Build Context Exclusions
+# These are excluded to reduce build context size (~100GB → ~2MB)
+# See deployment_plan.md "Excluded from Container" section for details
+
+# Large data directories (bind-mounted at runtime instead)
+vm-deployment/
+data/
+models/
+docker/
+results/
+
+# NER resources (9.8GB) - excluded because NER is disabled
+# To enable NER later, remove these lines and rebuild
+source/Parser/resources/
+source/Parser/logs/
+source/Parser/input/
+source/Parser/output/
+
+# Build artifacts
+*.sif
+*.tar
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+*.egg-info/
+
+# Git
+.git/
+.gitignore
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+
+# Misc
+*.log
+*.tmp
+.DS_Store
