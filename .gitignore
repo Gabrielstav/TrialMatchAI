@@ -91,3 +91,6 @@ local_test/README.md
 current_issue.txt
 
 snapshot-builder/.processed_ids.txt
+vm_development/deploy/snapshots/
+vm_development/docs/
+vm_development/snapshot-builder/.processed_ids.txt
