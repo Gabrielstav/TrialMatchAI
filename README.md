@@ -1,123 +1,107 @@
-### **TrialMatchAI**
+# TrialMatchAI
 
-<img src="img/logo.png" alt="Logo" align="right" width="200" height="200"> 
+<img src="img/logo.png" alt="Logo" align="right" width="200" height="200">
 
-An AI-driven tool designed to match patients with the most relevant clinical trials. Leveraging state-of-the-art Large Language Models (LLMs), Natural Language Processing (NLP), and Explainable AI (XAI), TrialMatchAI structures trial documentation and patient data to provide transparent, personalized recommendations.
+TrialMatchAI is an AI-driven system for matching patients to relevant clinical trials. It combines retrieval (BM25/vector search), NLP, and LLM-based reasoning to produce transparent, ranked trial recommendations.
 
----
+## Disclaimer
+This software is provided for research and informational purposes only. It is not medical advice and must not replace consultation with qualified healthcare professionals.
 
-## ⚠️ Disclaimer
-At this stage, TrialMatchAI is still under active development and largely a **prototype** provided for research and informational purposes only. It is **NOT** medical advice and should not replace consultation with qualified healthcare professionals.
+## Key Features
+- AI-powered matching of patient profiles to clinical trial eligibility criteria.
+- Two-stage retrieval (BM25 + vector) with optional reranking.
+- Explainable recommendations and criterion-level insights.
+- Scalable Elasticsearch-backed indexing.
+- Modular pipelines for indexing, retrieval, and reasoning.
 
----
+## Requirements
+- OS: Linux or macOS
+- Python: 3.8+
+- Java: required for NER/normalization components
+- Elasticsearch: Docker Compose or Apptainer
+- GPU: NVIDIA gpu with at least 40 GB of VRAM is recommended for large-scale processing
+- Disk space: 100 GB+ for datasets and indices
 
-## 🔍 Key Features
-
-- **AI-Powered Matching**: Utilizes advanced LLMs to parse complex eligibility criteria and patient records (including unstructured notes and genetic reports).
-- **Personalized Recommendations**: Tailors trial suggestions based on each patient’s unique clinical history and genomic profile.
-- **Explainable Insights**: Provides clear, chain-of-thought explanations for every recommended trial, enhancing trust and interpretability.
-- **Real-Time Updates**: Maintains an up-to-date database of recruiting trials.
-- **Scalable Architecture**: Dockerized components enable easy deployment of Elasticsearch indices and indexing pipelines.
-
----
-
-## ⚙️ System Requirements
-
-- **OS**: Linux or macOS
-- **Docker & Docker Compose**: For running the Elasticsearch container
-- **Java**: For running the NER and Normalization
-- **Python**: ≥ 3.8
-- **GPU**: NVIDIA (e.g., H100) with ≥ 60 GB VRAM (recommended for large-scale processing)
-- **Disk Space**: ≥ 100 GB free (for data and indices)
-
----
-
-## 🚀 Installation & Setup
-
-1. **Clone the Repository**  
-   ```bash  
-   git clone https://github.com/cbib/TrialMatchAI.git  
-   cd TrialMatchAI  
-   ```  
-
-2. **Ensure the Repository Is Up to Date**  
-   ```bash  
-   git pull origin main  
-   ```  
-
-3. **Make the Setup Script Executable**  
-   ```bash
-   chmod +x setup.sh
-   ```
-
-4. **(Optional) Configure Elasticsearch Password**  
-   - Open the `.env` file located in the `docker/` folder.  
-   - Update the `ELASTIC_PASSWORD` variable to your desired secure password.  
-   ```dotenv
-   # docker/.env
-   ELASTIC_PASSWORD=YourNewPassword
-   ```
-
-4a. **(Optional) Sync `config.json` Password**  
-   If you updated `ELASTIC_PASSWORD` above, open `config.json` in the repo root and update the Elasticsearch password field to match:  
-   ```json
-   {
-  "elasticsearch": {
-    "host": "https://localhost:9200",
-    "username": "elastic",
-    "password": "YourNewPassword",
-    .
-    .
-     },
-     ...
-   }
-   ```
-
-5. **Run the Setup Script**  
-   ```bash
-   ./setup.sh
-   ```  
-   - Installs Python dependencies  
-   - Downloads datasets, resources, and model archives from Zenodo  
-   - Verifies GPU availability  
-   - Builds the Elasticsearch container via Docker Compose  
-   - Launches indexing pipelines in the background  
-   - **Estimated Time**: ~60–90 minutes (depending on hardware)  
-
-6. **(Optional) Using Flash-Attention 2**
-   If you want to use Flash-Attention for faster and more memory efficient attention, you can install it through pip, as presented in the [package github](https://github.com/Dao-AILab/flash-attention). 
-
-   For some systems however, installing it with standard methods is either impossible or too slow. It is recommended in this case to manually download the **wheel** file compatible with your torch, cuda and python versions, listed in the package [releases](https://github.com/Dao-AILab/flash-attention/releases). Then, you can pip install that file.
-
----
-
-## 🎯 Usage Example
-
-Run the matcher on a sample input directory:
-
+## Quickstart (uv recommended)
+1) Install dependencies
 ```bash
-python -m src.Matcher.main 
+uv sync
 ```
 
-Results are saved under `results/`, with detailed criterion-level explanations for each recommended trial.
+2) Ensure Elasticsearch credentials are configured
+- If using Apptainer, set `ELASTIC_PASSWORD` in `elasticsearch/.env`.
+- For the runtime pipeline, set `TRIALMATCHAI_ES_PASSWORD` in your environment.
 
----
+3) Start Elasticsearch (auto-start supported)
+```bash
+trialmatchai-healthcheck --config Matcher/config/config.json --start-es
+```
 
-## 🤝 Contributing
+4) Run the pipeline
+```bash
+python -m Matcher.main
+```
 
-We welcome community contributions! To contribute:
+Results are written under `results/`.
 
-1. Fork the repository.  
-2. Create a feature branch: `git checkout -b feature/YourFeature`.  
-3. Commit your changes and push to your branch.  
-4. Open a Pull Request against `main`.
+## One-time Provisioning (data + models + indexing)
+You can run the all-in-one bootstrap script:
+```bash
+./setup.sh
+```
 
-Please follow our code style and include tests where applicable.
+Or run steps individually:
+```bash
+bash scripts/bootstrap_data.sh
+bash scripts/start_es.sh
+bash scripts/index_data.sh
+```
 
----
+## Package Installation (pip fallback)
+```bash
+pip install -e .
+```
 
-## 🙋 Support & Contact
+## Configuration Overrides
+Use environment variables or a `.env` file to override defaults:
+```bash
+# Elasticsearch
+TRIALMATCHAI_ES_HOST=https://localhost:9200
+TRIALMATCHAI_ES_USERNAME=elastic
+TRIALMATCHAI_ES_PASSWORD=YourNewPassword
+TRIALMATCHAI_ES_AUTO_START=true
+TRIALMATCHAI_ES_START_SCRIPT=elasticsearch/apptainer-run-es.sh
+TRIALMATCHAI_ES_START_TIMEOUT=600
 
-For questions, issues, or feature requests, open an issue on GitHub or reach out to:
+# Embedder
+TRIALMATCHAI_EMBEDDER_MODEL_NAME=BAAI/bge-m3
 
-- **Email**: [abdallahmajd7@gmail.com](mailto:abdallahmajd7@gmail.com)
+# Logging
+TRIALMATCHAI_LOG_LEVEL=INFO
+TRIALMATCHAI_LOG_JSON=0
+```
+
+Note: `Matcher/config/config.json` ships with a placeholder password (`CHANGE_ME`). Use env vars for production.
+
+## Healthcheck
+```bash
+trialmatchai-healthcheck --config Matcher/config/config.json --start-es
+```
+
+## Tests
+```bash
+uv run pytest
+```
+
+Integration tests (requires running ES):
+```bash
+TRIALMATCHAI_RUN_INTEGRATION=1 pytest -m integration
+```
+
+## Contributing
+We welcome contributions. Please open an issue or submit a PR with tests.
+
+## Support
+- Email: abdallahmajd7@gmail.com
+- DOI: https://doi.org/10.5281/zenodo.18329084
+- arXiv: https://arxiv.org/abs/2505.08508

@@ -4,21 +4,31 @@ import json
 import os
 from typing import Any, Dict
 
-DEFAULT_CONFIG_PATH = "Matcher/config/config.json"
+from Matcher.config.settings import TrialMatchSettings, apply_env_overrides
+from Matcher.utils.logging_config import setup_logging
+
+try:
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover - optional dependency
+    load_dotenv = None
 
 
-def load_config(config_path: str | None = None) -> Dict[str, Any]:
-    """Load configuration from a JSON file.
+logger = setup_logging(__name__)
 
-    Config path resolution:
-    1. Explicit config_path argument
-    2. TRIALMATCHAI_CONFIG environment variable
-    3. Default: Matcher/config/config.json
-    """
-    if config_path is None:
-        config_path = os.environ.get("TRIALMATCHAI_CONFIG", DEFAULT_CONFIG_PATH)
 
+def load_config(config_path: str = "Matcher/config/config.json") -> Dict[str, Any]:
+    """Load and validate configuration from a JSON file with env overrides."""
+    if load_dotenv:
+        load_dotenv()
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
     with open(config_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        raw: Dict[str, Any] = json.load(f)
+    raw = apply_env_overrides(raw)
+    settings = TrialMatchSettings.model_validate(raw)
+    cfg = settings.to_dict()
+    if cfg.get("elasticsearch", {}).get("password") in {"", "CHANGE_ME"}:
+        logger.warning(
+            "Elasticsearch password is not set. Use TRIALMATCHAI_ES_PASSWORD to supply it."
+        )
+    return cfg

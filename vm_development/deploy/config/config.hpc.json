@@ -44,7 +44,8 @@
     },
     "cot_adapter_path": "/mnt/models/finetuned/finetuned_phi_reasoning",
     "reranker_model_path": "/mnt/models/gemma-2-2b-it",
-    "reranker_adapter_path": "/mnt/models/finetuned/finetuned_gemma2"
+    "reranker_adapter_path": "/mnt/models/finetuned/finetuned_gemma2",
+    "base_model_supports_system_role": true
   },
   "tokenizer": {
     "use_fast": true,
@@ -98,5 +99,9 @@
     "seed": 1234,
     "length_bucket": true,
     "tensor_parallel_size": 1
+  },
+  "gpu": {
+    "cleanup_between_phases": true,
+    "logging": false
   }
 }

@@ -1,11 +1,51 @@
 from __future__ import annotations
 
-# Set multiprocessing start method to 'spawn' before any CUDA initialization,
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import torch
+from Parser.biomedner_engine import BioMedNER
+
+from elasticsearch import Elasticsearch
+
+from Matcher.config.config_loader import load_config
+from Matcher.models.embedding.text_embedder import TextEmbedder, TextEmbedderConfig
+from Matcher.models.llm.llm_loader import load_model_and_tokenizer
+from Matcher.models.llm.llm_reranker import LLMReranker
+from Matcher.models.llm.vllm_loader import load_vllm_engine
+from Matcher.pipeline.cot_reasoning import BatchTrialProcessor
+from Matcher.pipeline.cot_reasoning_vllm import BatchTrialProcessorVLLM
+from Matcher.pipeline.phenopacket_processor import process_phenopacket
+from Matcher.pipeline.trial_ranker import (
+    load_trial_data,
+    rank_trials,
+    save_ranked_trials,
+)
+from Matcher.pipeline.trial_search.first_level_search import ClinicalTrialSearch
+from Matcher.pipeline.trial_search.second_level_search import SecondStageRetriever
+from Matcher.services.biomedner_service import initialize_biomedner_services
+from Matcher.services.elasticsearch_service import ensure_elasticsearch
+from Matcher.utils.file_utils import (
+    create_directory,
+    read_json_file,
+    read_text_file,
+    write_json_file,
+    write_text_file,
+)
+from Matcher.schemas.phenopacket import Keywords, Phenopacket
+from Matcher.utils.logging_config import reset_request_id, set_request_id, setup_logging
+from Matcher.utils.timing import log_timing
+from Matcher.utils.gpu_log import (
+    log_gpu_memory_state,
+    log_live_cuda_tensors,
+    cleanup_gpu_memory,
+)
+
+# set multiprocessing start method to "spawn" before CUDA initialization,
 # this is required for vLLM when CUDA may already be initialized.
 # See: https://docs.vllm.ai/en/latest/design/multiprocessing.html
 import multiprocessing
 import os
-
 if __name__ == "__main__":
     # only set in main process to avoid issues with spawn workers
     try:
@@ -16,138 +56,7 @@ if __name__ == "__main__":
 # also set via environment variable for vLLM's internal multiprocessing
 os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
 
-from typing import Dict, List, Optional
-
-import torch
-
-from elasticsearch import Elasticsearch
-
-from .config.config_loader import load_config
-from .models.embedding.query_embedder import QueryEmbedder
-from .models.embedding.sentence_embedder import SecondLevelSentenceEmbedder
-from .models.llm.llm_loader import load_model_and_tokenizer
-from .models.llm.llm_reranker import LLMReranker
-from .pipeline.cot_reasoning import BatchTrialProcessor
-from .pipeline.phenopacket_processor import process_phenopacket
-from .pipeline.trial_ranker import (
-    load_trial_data,
-    rank_trials,
-    save_ranked_trials,
-)
-from .pipeline.trial_search.first_level_search import ClinicalTrialSearch
-from .pipeline.trial_search.second_level_search import SecondStageRetriever
-from .services.biomedner_service import initialize_biomedner_services
-from .utils.file_utils import (
-    create_directory,
-    read_json_file,
-    read_text_file,
-    write_json_file,
-    write_text_file,
-)
-from .utils.logging_config import setup_logging
-
-logger = setup_logging()
-
-
-def log_gpu_memory_state(label: str = "") -> None:
-    """Log GPU memory state and nvidia-smi output for debugging."""
-    if not torch.cuda.is_available():
-        return
-
-    free, total = torch.cuda.mem_get_info()
-    allocated = torch.cuda.memory_allocated()
-    reserved = torch.cuda.memory_reserved()
-
-    logger.info(
-        f"[GPU {label}] free={free / 2**30:.2f}GB, total={total / 2**30:.2f}GB, "
-        f"allocated={allocated / 2**30:.2f}GB, reserved={reserved / 2**30:.2f}GB"
-    )
-
-    # Also run nvidia-smi for process-level visibility
-    try:
-        import subprocess
-
-        result = subprocess.run(
-            [
-                "nvidia-smi",
-                "--query-compute-apps=pid,process_name,used_memory",
-                "--format=csv,noheader",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.stdout.strip():
-            logger.info(f"[GPU processes]\n{result.stdout.strip()}")
-    except Exception as e:
-        logger.debug(f"nvidia-smi query failed: {e}")
-
-
-def log_live_cuda_tensors(limit: int = 25) -> None:
-    """Log live CUDA tensors to help diagnose memory not being freed.
-
-    Helps distinguish between 'live refs' vs 'allocator pinned' scenarios.
-    If this prints non-trivial tensors after cleanup, references still exist.
-    """
-    if not torch.cuda.is_available():
-        return
-
-    import gc
-
-    items = []
-    for o in gc.get_objects():
-        try:
-            if torch.is_tensor(o) and o.is_cuda:
-                n = o.numel() * o.element_size()
-                items.append((n, tuple(o.shape), str(o.dtype), type(o).__name__))
-        except Exception:
-            pass
-
-    items.sort(reverse=True, key=lambda x: x[0])
-    logger.info(f"[CUDA] live cuda tensors={len(items)}")
-    for n, shape, dtype, typ in items[:limit]:
-        logger.info(
-            f"[CUDA] {n / 2**20:7.2f} MiB  {typ:<18s} shape={shape} dtype={dtype}"
-        )
-
-
-def cleanup_gpu_memory(*objs) -> None:
-    """Break CUDA ties by moving models to CPU.
-
-    NOTE: This function only breaks CUDA ties. The caller MUST set their
-    references to None after calling this, then run gc.collect() etc.
-    """
-    import gc
-
-    log_gpu_memory_state("before cleanup")
-
-    for obj in objs:
-        if obj is None:
-            continue
-        # Handle wrapped models (like LLMReranker that has .model attribute)
-        inner = getattr(obj, "model", None)
-        for m in (inner, obj):
-            if m is None:
-                continue
-            try:
-                # Prefer to_empty (avoids CPU memory spike) if available
-                if hasattr(m, "to_empty"):
-                    m.to_empty(device="cpu")
-                elif hasattr(m, "to"):
-                    m.to("cpu")
-            except Exception:
-                pass
-
-    gc.collect()
-    gc.collect()  # Run twice to handle cyclic references
-
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        torch.cuda.ipc_collect()
-        torch.cuda.synchronize()
-
-    log_gpu_memory_state("after cleanup")
-    log_live_cuda_tensors()
+logger = setup_logging(__name__)
 
 
 def run_first_level_search(
@@ -155,10 +64,10 @@ def run_first_level_search(
     output_folder: str,
     patient_info: Dict,
     bio_med_ner,
-    embedder: QueryEmbedder,
+    embedder: TextEmbedder,
     config: Dict,
     es_client: Elasticsearch,
-) -> Optional[tuple]:
+) -> Optional[Tuple]:
     main_conditions = keywords.get("main_conditions", [])
     other_conditions = keywords.get("other_conditions", [])
     expanded_sentences = keywords.get("expanded_sentences", [])
@@ -180,7 +89,6 @@ def run_first_level_search(
     main_conditions.extend(synonyms[:5])
 
     search_size = config["search"].get("max_trials_first_level", 300)
-    search_mode = config["search"].get("search_mode", "hybrid")
     trials, scores = cts.search_trials(
         condition=condition,
         age_input=age,
@@ -191,7 +99,6 @@ def run_first_level_search(
         synonyms=main_conditions,
         other_conditions=other_conditions,
         vector_score_threshold=config["search"]["vector_score_threshold"],
-        search_mode=search_mode,
     )
 
     nct_ids = [trial.get("nct_id") for trial in trials if trial.get("nct_id")]
@@ -223,7 +130,7 @@ def run_second_level_search(
     gemma_retriever: SecondStageRetriever,
     first_level_scores: Dict,
     config: Dict,
-) -> tuple:
+) -> Tuple:
     queries = list(set(main_conditions + other_conditions + expanded_sentences))[:10]
     logger.info(f"Running second-level retrieval with {len(queries)} queries ...")
 
@@ -281,10 +188,6 @@ def run_rag_processing(
     if use_vllm:
         logger.info("Using vLLM backend for CoT reasoning")
 
-        # Lazy import vLLM modules (only available on Linux with CUDA)
-        from .models.llm.vllm_loader import load_vllm_engine
-        from .pipeline.cot_reasoning_vllm import BatchTrialProcessorVLLM
-
         # Load vLLM configuration
         vllm_cfg = config.get("vllm", {})
 
@@ -315,7 +218,7 @@ def run_rag_processing(
             tokenizer.pad_token = tokenizer.eos_token
 
         # Get system role support flag from config (defaults to True for HPC with Phi-4)
-        supports_system_role = config.get("model", {}).get("supports_system_role", True)
+        supports_system_role = config.get("model", {}).get("base_model_supports_system_role", True)
 
         rag_processor = BatchTrialProcessor(
             model,
@@ -338,7 +241,8 @@ def run_rag_processing(
 def main_pipeline():
     logger.info("Starting TrialMatchAI pipeline...")
     config = load_config()
-    create_directory(config["paths"]["output_dir"])
+    paths = config["paths"]
+    create_directory(paths["output_dir"])
 
     if torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
@@ -366,16 +270,21 @@ def main_pipeline():
         model = model.half()  # type: ignore
 
     # Initialize components
-    first_level_embedder = QueryEmbedder(model_name=config["embedder"]["model_name"])
-    second_level_embedder = SecondLevelSentenceEmbedder(
-        model_name=config["embedder"]["model_name"]
+    embedder_cfg = config.get("embedder", {})
+    embedder = TextEmbedder(
+        TextEmbedderConfig(
+            model_name=embedder_cfg.get("model_name", "BAAI/bge-m3"),
+            pooling=embedder_cfg.get("pooling", "mean"),
+            max_length=embedder_cfg.get("max_length", 512),
+            batch_size=embedder_cfg.get("batch_size", 32),
+            use_gpu=embedder_cfg.get("use_gpu", True),
+            use_fp16=embedder_cfg.get("use_fp16", False),
+            normalize=embedder_cfg.get("normalize", True),
+        )
     )
-
     # Initialize BioMedNER only if enabled
     bio_med_ner = None
     if config.get("bio_med_ner", {}).get("enabled", True):
-        from ..Parser.biomedner_engine import BioMedNER
-
         # Filter out 'enabled' key before passing to BioMedNER constructor
         ner_config = {k: v for k, v in config["bio_med_ner"].items() if k != "enabled"}
         bio_med_ner = BioMedNER(**ner_config)
@@ -396,7 +305,7 @@ def main_pipeline():
     # Build ES client - auth/certs only when configured (disabled on HPC)
     es_user = config["elasticsearch"].get("username")
     es_pass = config["elasticsearch"].get("password")
-    ca_certs = config["paths"].get("docker_certs")
+    ca_certs = paths.get("docker_certs")
 
     es_client = Elasticsearch(
         hosts=[config["elasticsearch"]["host"]],
@@ -406,133 +315,150 @@ def main_pipeline():
         request_timeout=config["elasticsearch"]["request_timeout"],
         retry_on_timeout=config["elasticsearch"]["retry_on_timeout"],
     )
+    if not ensure_elasticsearch(es_client, config):
+        return
 
     gemma_retriever = SecondStageRetriever(
         es_client=es_client,
         llm_reranker=llm_reranker,
-        embedder=second_level_embedder,
+        embedder=embedder,
         index_name=config["elasticsearch"]["index_trials_eligibility"],
         bio_med_ner=bio_med_ner,
-        search_mode=config["search"].get("search_mode", "hybrid"),
     )
 
     # Process phenopackets in two phases for GPU memory efficiency
-    patient_folder = config["paths"]["patients_dir"]
-    phenopacket_files = [f for f in os.listdir(patient_folder) if f.endswith(".json")]
+    patient_folder = Path(paths["patients_dir"])
+    if not patient_folder.exists():
+        logger.error("Patients folder not found: %s", patient_folder)
+        return
+    phenopacket_files = sorted(
+        [p for p in patient_folder.iterdir() if p.suffix == ".json"]
+    )
+    if not phenopacket_files:
+        logger.warning("No patient files found in %s", patient_folder)
+        return
 
-    # Check if using vLLM backend (requires two-phase processing)
-    use_vllm = config.get("cot_backend") == "vllm"
+    # GPU config - user sets based on their hardware (V100 needs cleanup, A100 doesn't)
+    gpu_cfg = config.get("gpu", {})
+    cleanup_between_phases = gpu_cfg.get("cleanup_between_phases", False)
+    gpu_logging = gpu_cfg.get("logging", False)
 
     # Store intermediate results for Phase 2
     patient_results: Dict[str, Dict] = {}
 
     # ==========================================================================
-    # PHASE 1: Process ALL patients through search pipeline (HuggingFace models)
+    # PHASE 1: Process ALL patients through search pipeline
     # ==========================================================================
     logger.info(
         f"Phase 1: Processing {len(phenopacket_files)} patient(s) through search pipeline..."
     )
 
-    for phenopacket_file in phenopacket_files:
-        patient_id = phenopacket_file.split(".")[0]
-        output_folder = f"{config['paths']['output_dir']}/{patient_id}"
-        create_directory(output_folder)
+    for phenopacket_path in phenopacket_files:
+        patient_id = phenopacket_path.stem
+        token = set_request_id(patient_id)
+        output_folder = Path(paths["output_dir"]) / patient_id
+        create_directory(str(output_folder))
 
-        input_file = f"{patient_folder}/{phenopacket_file}"
-        output_file = f"{output_folder}/keywords.json"
+        input_file = str(phenopacket_path)
+        output_file = str(output_folder / "keywords.json")
 
-        # Get system role support flag from config (defaults to True for HPC with Phi-4)
-        supports_system_role = config.get("model", {}).get("supports_system_role", True)
+        try:
+            with log_timing(logger, "Phenopacket processing"):
+                with torch.no_grad():
+                    process_phenopacket(
+                        input_file, output_file, model=model, tokenizer=tokenizer
+                    )
 
-        with torch.no_grad():
-            process_phenopacket(
-                input_file,
-                output_file,
-                model=model,
-                tokenizer=tokenizer,
-                supports_system_role=supports_system_role,
+            keywords = Keywords.model_validate(read_json_file(output_file)).model_dump()
+            patient_info = Phenopacket.model_validate(
+                read_json_file(input_file)
+            ).model_dump()
+            patient_info["split_raw_description"] = keywords.get(
+                "expanded_sentences", []
             )
 
-        keywords = read_json_file(output_file)
-        patient_info = read_json_file(input_file)
-        patient_info["split_raw_description"] = keywords.get("expanded_sentences", [])
+            # Run search pipeline
+            with log_timing(logger, "First-level search"):
+                with torch.no_grad():
+                    result = run_first_level_search(
+                        keywords,
+                        str(output_folder),
+                        patient_info,
+                        bio_med_ner,
+                        embedder,
+                        config,
+                        es_client,
+                    )
+            if not result:
+                logger.error("First-level search failed for %s", patient_id)
+                continue
 
-        # Run search pipeline
-        with torch.no_grad():
-            result = run_first_level_search(
-                keywords,
-                output_folder,
-                patient_info,
-                bio_med_ner,
-                first_level_embedder,
-                config,
-                es_client,
-            )
-        if not result:
-            logger.error(f"First-level search failed for {patient_id}")
-            continue
-
-        (
-            nct_ids,
-            main_conditions,
-            other_conditions,
-            expanded_sentences,
-            first_level_scores,
-        ) = result
-
-        with torch.no_grad():
-            _, top_trials_path = run_second_level_search(
-                output_folder,
+            (
                 nct_ids,
                 main_conditions,
                 other_conditions,
                 expanded_sentences,
-                gemma_retriever,
                 first_level_scores,
-                config,
-            )
+            ) = result
 
-        # Store results for Phase 2
-        patient_results[patient_id] = {
-            "output_folder": output_folder,
-            "top_trials_path": top_trials_path,
-            "patient_info": patient_info,
-        }
-        logger.info(f"Phase 1 complete for patient {patient_id}")
+            with log_timing(logger, "Second-level search"):
+                with torch.no_grad():
+                    _, top_trials_path = run_second_level_search(
+                        str(output_folder),
+                        nct_ids,
+                        main_conditions,
+                        other_conditions,
+                        expanded_sentences,
+                        gemma_retriever,
+                        first_level_scores,
+                        config,
+                    )
+
+            # Store results for Phase 2
+            patient_results[patient_id] = {
+                "output_folder": str(output_folder),
+                "top_trials_path": top_trials_path,
+                "patient_info": patient_info,
+            }
+            logger.info(f"Phase 1 complete for patient {patient_id}")
+
+        except Exception:  # noqa
+            logger.exception("Phase 1 failed for patient %s", patient_id)
+            continue
+        finally:
+            reset_request_id(token)
 
     # ==========================================================================
-    # GPU MEMORY CLEANUP (between phases, only if using vLLM)
+    # GPU MEMORY CLEANUP (between phases, if configured)
     # ==========================================================================
-    if use_vllm and patient_results:
+    if cleanup_between_phases and patient_results:
         import gc
 
-        logger.info("Phase 1 complete. Cleaning up GPU memory for vLLM...")
-        cleanup_gpu_memory(
-            model,
-            llm_reranker,
-            gemma_retriever,
-            first_level_embedder,
-            second_level_embedder,
-        )
+        logger.info("Phase 1 complete. Cleaning up GPU memory...")
 
-        # Caller-side: explicitly drop all references
+        if gpu_logging:
+            log_gpu_memory_state("before cleanup")
+
+        cleanup_gpu_memory(model, llm_reranker, gemma_retriever, embedder)
+
+        # Explicitly drop all references
         model = None  # type: ignore
         tokenizer = None  # type: ignore
         llm_reranker = None  # type: ignore
         gemma_retriever = None  # type: ignore
-        first_level_embedder = None  # type: ignore
-        second_level_embedder = None  # type: ignore
+        embedder = None  # type: ignore
 
         # Final cleanup after dropping references
         gc.collect()
         gc.collect()
-        torch.cuda.empty_cache()
-        torch.cuda.ipc_collect()
-        torch.cuda.synchronize()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+            torch.cuda.synchronize()
 
-        # Log final state before vLLM init
-        log_gpu_memory_state("after reference drop")
-        log_live_cuda_tensors()
+        if gpu_logging:
+            log_gpu_memory_state("after cleanup")
+            log_live_cuda_tensors()
 
     # ==========================================================================
     # PHASE 2: RAG/CoT processing for ALL patients
@@ -540,22 +466,32 @@ def main_pipeline():
     logger.info(f"Phase 2: Running RAG processing for {len(patient_results)} patient(s)...")
 
     for patient_id, data in patient_results.items():
-        with torch.no_grad():
-            run_rag_processing(
-                data["output_folder"],
-                data["top_trials_path"],
-                data["patient_info"],
-                model,
-                tokenizer,
-                config,
-            )
+        token = set_request_id(patient_id)
+        try:
+            with log_timing(logger, "RAG processing"):
+                with torch.no_grad():
+                    run_rag_processing(
+                        data["output_folder"],
+                        data["top_trials_path"],
+                        data["patient_info"],
+                        model,
+                        tokenizer,
+                        config,
+                    )
 
-        # Final ranking
-        trial_data = load_trial_data(data["output_folder"])
-        ranked_trials = rank_trials(trial_data)
-        save_ranked_trials(ranked_trials, f"{data['output_folder']}/ranked_trials.json")
+            with log_timing(logger, "Final ranking"):
+                trial_data = load_trial_data(data["output_folder"])
+                ranked_trials = rank_trials(trial_data)
+                save_ranked_trials(
+                    ranked_trials, str(Path(data["output_folder"]) / "ranked_trials.json")
+                )
 
-        logger.info(f"Pipeline completed for patient {patient_id}")
+            logger.info("Pipeline completed for patient %s", patient_id)
+        except Exception:  # noqa
+            logger.exception("Phase 2 failed for patient %s", patient_id)
+            continue
+        finally:
+            reset_request_id(token)
 
 
 if __name__ == "__main__":

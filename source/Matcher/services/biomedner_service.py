@@ -4,7 +4,7 @@ import time
 
 from ..utils.logging_config import setup_logging
 
-logger = setup_logging()
+logger = setup_logging(__name__)
 
 
 def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:

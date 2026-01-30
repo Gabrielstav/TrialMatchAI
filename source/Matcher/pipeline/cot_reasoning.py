@@ -8,7 +8,7 @@ from ...Matcher.utils.file_utils import read_json_file, write_json_file, write_t
 from ...Matcher.utils.logging_config import setup_logging
 from tqdm import tqdm
 
-logger = setup_logging()
+logger = setup_logging(__name__)
 
 
 class BatchTrialProcessor:

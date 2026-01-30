@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 
 from ....Matcher.utils.logging_config import setup_logging
 
-logger = setup_logging()
+logger = setup_logging(__name__)
 
 
 def _infer_max_ctx_len(model_path: str) -> Optional[int]:

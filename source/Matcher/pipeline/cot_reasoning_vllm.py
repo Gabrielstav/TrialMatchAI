@@ -17,7 +17,7 @@ try:
 except Exception:  # noqa
     LoRARequest = None
 
-logger = setup_logging()
+logger = setup_logging(__name__)
 
 
 class BatchTrialProcessorVLLM:

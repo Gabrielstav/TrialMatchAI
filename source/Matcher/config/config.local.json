@@ -25,7 +25,7 @@
     "cot_adapter_path": null,
     "reranker_model_path": "vm-deployment/models/TinyLlama-1.1B-Chat-v1.0",
     "reranker_adapter_path": null,
-    "supports_system_role": false
+    "base_model_supports_system_role": false
   },
   "tokenizer": {
     "use_fast": true,
@@ -75,5 +75,9 @@
     "gpu_memory_utilization": 0.5,
     "max_model_len": 8192,
     "tensor_parallel_size": 1
+  },
+  "gpu": {
+    "cleanup_between_phases": false,
+    "logging": false
   }
 }

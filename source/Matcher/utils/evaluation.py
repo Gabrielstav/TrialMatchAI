@@ -304,7 +304,7 @@ if __name__ == "__main__":
 
     # Lazy import to avoid package cycles
     try:
-        from .file_utils import read_json_file  # type: ignore
+        from Matcher.utils.file_utils import read_json_file  # type: ignore
     except Exception:
         # Fallback path if run standalone
         from Matcher.utils.file_utils import read_json_file  # type: ignore

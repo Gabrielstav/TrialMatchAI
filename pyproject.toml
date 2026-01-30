@@ -5,7 +5,6 @@ description = "AI-powered clinical trial matching pipeline"
 requires-python = ">=3.11,<3.13"
 readme = "README.md"
 
-# Base dependencies - work on both local and HPC
 dependencies = [
     # Core ML
     "torch>=2.2.0",
@@ -13,34 +12,36 @@ dependencies = [
     "accelerate>=1.0.0",
     "tokenizers>=0.20.0",
     "safetensors>=0.4.0",
-    "sentence-transformers>=3.0.0",
     "sentencepiece>=0.2.0",
-    "datasets>=2.19.0",
-    "faiss-cpu>=1.8.0",
-    "peft>=0.12.0",
-    "einops>=0.8.0",
-    "tiktoken>=0.7.0",
+    "sentence-transformers>=3.0.0",  # safe to delete
+    "datasets>=2.19.0",  # safe to delete
+    "peft>=0.12.0",  # safe to delete
+    "einops>=0.8.0",  # safe to delete
+    "tiktoken>=0.7.0",  # safe to delete
 
-    # Classical stack - pin numpy for Numba compatibility
+    # Data/numerical
     "numpy>=1.26.0,<2.3",
-    "scipy>=1.12.0",
-    "scikit-learn>=1.4.0",
     "pandas>=2.2.0",
     "tqdm>=4.66.0",
+    "faiss-cpu>=1.8.0",
+    "scipy>=1.12.0",
+    "scikit-learn>=1.4.0",
     "regex>=2024.0.0",
-    "orjson>=3.10.0",
+    "orjson>=3.10.0",  # safe to delete
+
+    # Config/utils
     "PyYAML>=6.0.0",
+    "python-dateutil>=2.8.0",
     "python-dotenv>=1.0.0",
     "rich>=13.7.0",
-    "python-dateutil>=2.8.0",
 
     # NLP / spaCy
     "spacy>=3.7.0",
-    "medspacy>=1.3.0",
     "gliner>=0.2.10",
     "nltk>=3.8.0",
+    "medspacy>=1.3.0",  # safe to delete (unless planning to use)
 
-    # Elasticsearch client
+    # Elasticsearch
     "elasticsearch>=8.13.0,<9.0.0",
 
     # Biomedical NLP
@@ -59,8 +60,9 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0",
-    "ruff>=0.5.0",
+    "ruff>=0.6.0",
     "mypy>=1.10.0",
+    "deptry>=0.24.0",
 ]
 
 # HPC/Linux dependencies (vLLM, quantization, headless opencv)
@@ -70,14 +72,6 @@ hpc = [
     "opencv-python-headless>=4.9.0",
 ]
 
-# Local development extras (optional APIs)
-local = [
-    "openai>=1.0.0",
-    "langchain>=0.3.0",
-    "langchain-core>=0.3.0",
-    "langchain-community>=0.3.0",
-    "langchain-openai>=0.3.0",
-]
 
 [build-system]
 requires = ["hatchling"]
@@ -90,6 +84,39 @@ packages = ["source"]
 # Ensure numpy stays Numba-compatible even if transitive deps want higher
 override-dependencies = [
     "numpy>=1.26.0,<2.3",
+]
+
+[tool.deptry]
+ignore = ["DEP001", "DEP003"]
+known_first_party = ["Parser", "Matcher", "models", "ops", "biomedner_init", "biomedner_engine"]
+
+# Packages that are transitive runtime deps (not imported but required by other packages)
+[tool.deptry.per_rule_ignores]
+DEP002 = [
+    # Runtime deps for transformers/torch ecosystem
+    "accelerate",      # required by transformers for GPU acceleration
+    "tokenizers",      # required by transformers
+    "safetensors",     # required by transformers for model loading
+    "sentencepiece",   # required by some tokenizers
+    "regex",           # required by transformers
+    "PyYAML",          # required by transformers, pydantic
+    "huggingface_hub", # required by transformers
+    # Runtime deps for spacy/sklearn
+    "scipy",           # required by scikit-learn
+    "scikit-learn",    # required by spacy/thinc
+    # Runtime deps for other packages
+    "rich",            # required by typer/spacy
+    "httpx",           # required by elasticsearch
+    "pydantic-settings",  # used via pydantic in settings.py
+    # Dev tools (CLI tools, not imported)
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "deptry",
+    # HPC extras (not installed on macOS)
+    "bitsandbytes",
+    "opencv-python-headless",
 ]
 
 [tool.ruff]

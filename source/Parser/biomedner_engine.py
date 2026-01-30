@@ -18,8 +18,8 @@ from pathlib import Path
 import bioregistry
 import numpy as np
 
-from .convert import get_pub_annotation
-from .normalizer import Normalizer
+from Parser.convert import get_pub_annotation
+from Parser.normalizer import Normalizer
 
 print(os.getcwd())
 

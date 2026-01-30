@@ -5,7 +5,7 @@ from ....Matcher.utils.logging_config import setup_logging
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-logger = setup_logging()
+logger = setup_logging(__name__)
 
 
 def load_model_and_tokenizer(

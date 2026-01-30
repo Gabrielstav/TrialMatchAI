@@ -3,12 +3,13 @@ import re
 from typing import Dict, List, Optional
 
 import torch
-from ..utils.file_utils import read_json_file, write_json_file
-from ..utils.logging_config import setup_logging
-from ..utils.temporal_utils import parse_iso_duration, parse_temporal
+from Matcher.schemas.phenopacket import Phenopacket
+from Matcher.utils.file_utils import read_json_file, write_json_file
+from Matcher.utils.logging_config import setup_logging
+from Matcher.utils.temporal_utils import parse_iso_duration, parse_temporal
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-logger = setup_logging()
+logger = setup_logging(__name__)
 
 
 class PhenopacketProcessor:
@@ -19,11 +20,11 @@ class PhenopacketProcessor:
 
     def _load_and_validate(self, file_path: str) -> Dict:
         data = read_json_file(file_path)
-        required_fields = ["id", "metaData", "subject"]
-        for field in required_fields:
-            if field not in data:
-                raise ValueError(f"Invalid Phenopacket: Missing required field {field}")
-        logger.info("Phenopacket loaded and validated successfully.")
+        try:
+            Phenopacket.model_validate(data)
+            logger.info("Phenopacket loaded and validated successfully.")
+        except Exception as exc:
+            raise ValueError(f"Invalid Phenopacket: {exc}") from exc
         return data
 
     def _add_medical_sentence(self, category: str, content: str):
@@ -236,13 +237,7 @@ class PhenopacketProcessor:
 
 
 class ClinicalSummarizer:
-    def __init__(
-        self,
-        model=None,
-        tokenizer=None,
-        model_name: Optional[str] = None,
-        supports_system_role: bool = True,
-    ):
+    def __init__(self, model=None, tokenizer=None, model_name: Optional[str] = None):
         if model is not None:
             if tokenizer is None:
                 raise ValueError(
@@ -262,7 +257,6 @@ class ClinicalSummarizer:
                 "Must provide either a model instance with its tokenizer or a model_name."
             )
 
-        self.supports_system_role = supports_system_role
         self.model.eval()
 
     def generate_summary(self, sentences: List[str]) -> Dict:
@@ -296,17 +290,10 @@ class ClinicalSummarizer:
         ]
         }
         """
-        user_content = " ".join(sentences)
-
-        # Some models (e.g., Gemma) don't support system role - combine into user message
-        if self.supports_system_role:
-            messages = [
-                {"role": "system", "content": SYSTEM_PROMPT.strip()},
-                {"role": "user", "content": user_content},
-            ]
-        else:
-            combined_content = f"{SYSTEM_PROMPT.strip()}\n\nPatient Information:\n{user_content}"
-            messages = [{"role": "user", "content": combined_content}]
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT.strip()},
+            {"role": "user", "content": " ".join(sentences)},
+        ]
 
         try:
             prompt = self.tokenizer.apply_chat_template(
@@ -316,14 +303,9 @@ class ClinicalSummarizer:
                 return_tensors="pt",
             ).to(self.model.device)
 
-            # Create attention mask (1 for real tokens, 0 for padding)
-            # This avoids the warning when pad_token == eos_token
-            attention_mask = (prompt != self.tokenizer.pad_token_id).long()
-
             with torch.no_grad():
                 output_ids = self.model.generate(
                     prompt,
-                    attention_mask=attention_mask,
                     max_new_tokens=2048,
                     do_sample=False,
                     return_dict_in_generate=False,
@@ -384,21 +366,14 @@ def process_phenopacket(
     model=None,
     tokenizer=None,
     model_name: str = "microsoft/phi-2",
-    supports_system_role: bool = True,
 ) -> bool:
     try:
         processor = PhenopacketProcessor(input_file)
         narrative = processor.generate_medical_narrative()
         summarizer = (
-            ClinicalSummarizer(
-                model=model,
-                tokenizer=tokenizer,
-                supports_system_role=supports_system_role,
-            )
+            ClinicalSummarizer(model=model, tokenizer=tokenizer)
             if model and tokenizer
-            else ClinicalSummarizer(
-                model_name=model_name, supports_system_role=supports_system_role
-            )
+            else ClinicalSummarizer(model_name=model_name)
         )
         summary = summarizer.generate_summary(narrative)
         write_json_file(summary, output_file)

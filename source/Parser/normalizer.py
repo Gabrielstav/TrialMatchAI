@@ -2,8 +2,8 @@ import os
 import socket
 from concurrent.futures import ThreadPoolExecutor
 
-from .normalizers.neural_normalizer import NeuralNormalizer
-from .normalizers.normalizer_all import (
+from Parser.normalizers.neural_normalizer import NeuralNormalizer
+from Parser.normalizers.normalizer_all import (
     CellLineNormalizer,
     CellTypeNormalizer,
     ChemicalNormalizer,
